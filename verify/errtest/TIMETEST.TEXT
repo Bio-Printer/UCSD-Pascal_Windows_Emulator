@@ -1,0 +1,13 @@
+PROGRAM TIMETEST;
+(* TIME(hi, lo): sixtieths of a second -- with the PC's clock, since midnight. *)
+VAR H1, L1, H2, L2, I, J: INTEGER; T: REAL;
+BEGIN
+  TIME(H1, L1);
+  FOR I := 1 TO 3000 DO FOR J := 1 TO 1000 DO ;
+  TIME(H2, L2);
+  WRITELN('TIME1 ', H1, ' ', L1);
+  WRITELN('TIME2 ', H2, ' ', L2);
+  T := H1 * 65536.0 + L1; IF L1 < 0 THEN T := T + 65536.0;
+  T := T / 60.0;
+  WRITELN('CLOCK ', TRUNC(T / 3600.0), ':', TRUNC(T / 60.0) MOD 60, ':', TRUNC(T) MOD 60)
+END.

@@ -1,0 +1,301 @@
+PROGRAM FIXUP;
+(* FIXUP -- make a self-compiled Pascal compiler (*SYSTEM.WRK.CODE)
+   runnable as *SYSTEM.COMPILER.
+
+   COMPILER.TEXT declares placeholder SEGMENT PROCEDUREs for the
+   operating system's segments 0..9, so the real compiler lands in
+   segments 10..15.  The compiled file therefore has 16-byte placeholder
+   segments in slots 0..9, and its segment 1 -- where the system enters
+   a program -- is just RBP 0, so it returns at once.  The released
+   SYSTEM.COMPILER has slots 0 and 2..9 empty and a 22-byte stub,
+   COMPDUMM, in slot 1:  LDA 1,8 ; CXP 10,1 ; RBP 0  -- a call to the
+   compiler proper (segment 10, procedure 1).
+
+   FIXUP  1. verifies *SYSTEM.WRK.CODE is the unprocessed compiler,
+          2. copies *SYSTEM.COMPILER to *SYSOLD.COMPILER,
+          3. writes a new *SYSTEM.COMPILER: segments 10..15 from the
+             work file packed from block 1, then COMPDUMM as segment 1.
+          4. marks both files as CODE files in the volume directory:
+             a Pascal REWRITE makes them DATA files, and the system
+             refuses to run a compiler that is not a code file.
+   The system volume's unit is found (before anything is written) by
+   scanning units 4,5,9..12 for the directory that holds both
+   SYSTEM.WRK.CODE and SYSTEM.COMPILER; the directory is only patched
+   if the two new entries are exactly the files just written.
+   *SYSTEM.WRK.CODE itself is not changed.  If anything fails before
+   step 3 completes, the old *SYSTEM.COMPILER is left in place. *)
+(*$I-*)
+TYPE
+  BLOCK = RECORD CASE INTEGER OF
+            0: (W: ARRAY[0..255] OF INTEGER);
+            1: (C: PACKED ARRAY[0..511] OF CHAR)
+          END;
+  UFILE = FILE;    (* II.0 needs a type identifier for file parameters *)
+  DIRBUF = RECORD CASE INTEGER OF   (* directory: blocks 2..5 *)
+             0: (W: ARRAY[0..1023] OF INTEGER);
+             1: (C: PACKED ARRAY[0..2047] OF CHAR)
+           END;
+VAR
+  WRKF, OLDF, BAKF, NEWF: UFILE;
+  DICT, ODICT, NDICT, BUF, STUB: BLOCK;
+  EXPECT: ARRAY[10..15] OF STRING[8];
+  DIR: DIRBUF;
+  S, K, NEXTBLK, NB, ADDR, LEN, TOTAL, OLDBLKS, SYSU: INTEGER;
+  HAVEOLD, WROTEBAK, SAME: BOOLEAN;
+
+PROCEDURE CHECK(COND: BOOLEAN; MSG: STRING);
+BEGIN
+  IF NOT COND THEN
+    BEGIN
+      WRITELN;
+      WRITELN('FIXUP: ', MSG);
+      IF WROTEBAK THEN
+        WRITELN('*SYSTEM.COMPILER was NOT replaced.')
+      ELSE
+        WRITELN('No files were changed.');
+      EXIT(FIXUP)
+    END
+END;
+
+FUNCTION NAMEIS(VAR B: BLOCK; SG: INTEGER; N: STRING): BOOLEAN;
+VAR I: INTEGER; EQ: BOOLEAN;
+BEGIN
+  EQ := LENGTH(N) = 8;
+  IF EQ THEN
+    FOR I := 1 TO 8 DO
+      IF B.C[63 + 8*SG + I] <> N[I] THEN EQ := FALSE;
+  NAMEIS := EQ
+END;
+
+PROCEDURE SETNAME(VAR B: BLOCK; SG: INTEGER; N: STRING);
+VAR I: INTEGER;
+BEGIN
+  FOR I := 1 TO 8 DO B.C[63 + 8*SG + I] := N[I]
+END;
+
+FUNCTION SEGNUMOK(VAR F: UFILE; ADR, LN, SG: INTEGER): BOOLEAN;
+(* the last word of a code segment holds its segment number (low byte) *)
+VAR OFF: INTEGER; B: BLOCK;
+BEGIN
+  OFF := LN - 2;
+  IF BLOCKREAD(F, B, 1, ADR + OFF DIV 512) <> 1 THEN
+    SEGNUMOK := FALSE
+  ELSE
+    SEGNUMOK := ORD(B.C[OFF MOD 512]) = SG
+END;
+
+PROCEDURE COPYBLKS(VAR SRC, DST: UFILE; FROMB, TOB, COUNT: INTEGER);
+VAR I: INTEGER; B: BLOCK;
+BEGIN
+  FOR I := 0 TO COUNT - 1 DO
+    BEGIN
+      CHECK(BLOCKREAD(SRC, B, 1, FROMB + I) = 1, 'read error');
+      CHECK(BLOCKWRITE(DST, B, 1, TOB + I) = 1, 'write error (disk full?)')
+    END
+END;
+
+FUNCTION DENTRY(N: STRING): INTEGER;
+(* index of the directory entry named N in DIR, 0 if none *)
+VAR I, J, R: INTEGER; EQ: BOOLEAN;
+BEGIN
+  R := 0;
+  IF (DIR.W[8] > 0) AND (DIR.W[8] <= 77) THEN
+    FOR I := 1 TO DIR.W[8] DO
+      IF ORD(DIR.C[26*I + 6]) = LENGTH(N) THEN
+        BEGIN
+          EQ := TRUE;
+          FOR J := 1 TO LENGTH(N) DO
+            IF DIR.C[26*I + 6 + J] <> N[J] THEN EQ := FALSE;
+          IF EQ THEN R := I
+        END;
+  DENTRY := R
+END;
+
+FUNCTION ENTBLKS(I: INTEGER): INTEGER;
+BEGIN
+  ENTBLKS := DIR.W[13*I + 1] - DIR.W[13*I]
+END;
+
+PROCEDURE SETKIND(I: INTEGER);
+(* file kind is the low 4 bits of the entry's third word; 2 = code *)
+BEGIN
+  DIR.W[13*I + 2] := DIR.W[13*I + 2] - (DIR.W[13*I + 2] MOD 16) + 2
+END;
+
+PROCEDURE FINDSYS;
+(* find the unit holding the system volume, before anything is written *)
+VAR UI: INTEGER; UNITS: ARRAY[1..6] OF INTEGER;
+BEGIN
+  UNITS[1] := 4;  UNITS[2] := 5;  UNITS[3] := 9;
+  UNITS[4] := 10; UNITS[5] := 11; UNITS[6] := 12;
+  SYSU := 0;
+  UI := 1;
+  WHILE (SYSU = 0) AND (UI <= 6) DO
+    BEGIN
+      UNITREAD(UNITS[UI], DIR, 2048, 2);
+      IF IORESULT = 0 THEN
+        IF (DENTRY('SYSTEM.WRK.CODE') > 0) AND
+           (DENTRY('SYSTEM.COMPILER') > 0) THEN SYSU := UNITS[UI];
+      UI := UI + 1
+    END;
+  CHECK(SYSU <> 0, 'cannot find the system volume''s directory');
+  WRITELN('System volume is on unit #', SYSU, '.')
+END;
+
+PROCEDURE MARKCODE;
+(* 4. mark the new files as code files *)
+VAR NI, OI: INTEGER; OK: BOOLEAN;
+BEGIN
+  UNITREAD(SYSU, DIR, 2048, 2);
+  OK := IORESULT = 0;
+  NI := 0; OI := 0;
+  IF OK THEN
+    BEGIN
+      NI := DENTRY('SYSTEM.COMPILER');
+      OI := DENTRY('SYSOLD.COMPILER');
+      OK := (NI > 0) AND (ENTBLKS(NI) = TOTAL);
+      IF WROTEBAK THEN OK := OK AND (OI > 0) AND (ENTBLKS(OI) = OLDBLKS)
+    END;
+  IF OK THEN
+    BEGIN
+      SETKIND(NI);
+      IF WROTEBAK THEN SETKIND(OI);
+      UNITWRITE(SYSU, DIR, 2048, 2);
+      OK := IORESULT = 0
+    END;
+  IF OK THEN
+    WRITELN('Marked as code files in the directory on unit #', SYSU, '.')
+  ELSE
+    BEGIN
+      WRITELN('WARNING: could not mark *SYSTEM.COMPILER as a code file;');
+      WRITELN('the system will refuse to run it until that is fixed.')
+    END
+END;
+
+PROCEDURE VERIFY;
+(* 1. is *SYSTEM.WRK.CODE really the unprocessed compiler? *)
+BEGIN
+  RESET(WRKF, '*SYSTEM.WRK.CODE');
+  CHECK(IORESULT = 0, 'cannot open *SYSTEM.WRK.CODE');
+  CHECK(BLOCKREAD(WRKF, DICT, 1, 0) = 1, 'cannot read the segment dictionary');
+  CHECK(NOT NAMEIS(DICT, 1, 'COMPDUMM'),
+        '*SYSTEM.WRK.CODE already has the COMPDUMM stub');
+  FOR S := 10 TO 15 DO
+    BEGIN
+      ADDR := DICT.W[2*S];
+      LEN := DICT.W[2*S + 1];
+      WRITELN('  segment ', S:2, ' ', EXPECT[S], '  block ', ADDR:3,
+              '  ', LEN:5, ' bytes');
+      CHECK(NAMEIS(DICT, S, EXPECT[S]),
+            'unexpected segment name -- not the Pascal compiler');
+      CHECK((ADDR > 0) AND (LEN > 0), 'empty compiler segment');
+      CHECK(SEGNUMOK(WRKF, ADDR, LEN, S),
+            'segment number in the code does not match its slot')
+    END;
+  CHECK(NAMEIS(DICT, 1, 'USERPROG') AND (DICT.W[3] = 16),
+        'segment 1 is not the USERPROG placeholder');
+  CHECK(BLOCKREAD(WRKF, BUF, 1, DICT.W[2]) = 1, 'cannot read segment 1');
+  CHECK(BUF.W[0] = 193, 'segment 1 placeholder is not just RBP 0');
+  WRITELN('  segment  1 USERPROG placeholder -- to be replaced by COMPDUMM');
+  WRITELN('*SYSTEM.WRK.CODE verified: unprocessed Pascal compiler.')
+END;
+
+PROCEDURE MAKESTUB;
+(* COMPDUMM: LDA 1,8; CXP 10,1; RBP 0; its jtab; proc dictionary *)
+BEGIN
+  FOR K := 0 TO 255 DO STUB.W[K] := 0;
+  STUB.W[0] := 434;    STUB.W[1] := -13048; STUB.W[2] := 266;
+  STUB.W[3] := 193;    STUB.W[4] := 0;      STUB.W[5] := 4;
+  STUB.W[6] := 6;      STUB.W[7] := 14;     STUB.W[8] := 1;
+  STUB.W[9] := 2;      STUB.W[10] := 257
+END;
+
+PROCEDURE BACKUP;
+(* 2. copy *SYSTEM.COMPILER to *SYSOLD.COMPILER *)
+BEGIN
+  RESET(OLDF, '*SYSTEM.COMPILER');
+  HAVEOLD := IORESULT = 0;
+  IF NOT HAVEOLD THEN
+    WRITELN('No existing *SYSTEM.COMPILER -- nothing to back up.')
+  ELSE
+    BEGIN
+      CHECK(BLOCKREAD(OLDF, ODICT, 1, 0) = 1, 'cannot read *SYSTEM.COMPILER');
+      IF NAMEIS(ODICT, 1, 'COMPDUMM') AND (ODICT.W[3] = 22) THEN
+        BEGIN
+          CHECK(BLOCKREAD(OLDF, BUF, 1, ODICT.W[2]) = 1, 'cannot read old stub');
+          SAME := TRUE;
+          FOR K := 0 TO 10 DO
+            IF BUF.W[K] <> STUB.W[K] THEN SAME := FALSE;
+          IF SAME THEN
+            WRITELN('COMPDUMM stub matches the one in *SYSTEM.COMPILER.')
+          ELSE
+            WRITELN('Note: old COMPDUMM differs; using the built-in stub.')
+        END;
+      REWRITE(BAKF, '*SYSOLD.COMPILER');
+      CHECK(IORESULT = 0, 'cannot create *SYSOLD.COMPILER');
+      K := 0;
+      WHILE BLOCKREAD(OLDF, BUF, 1, K) = 1 DO
+        BEGIN
+          CHECK(BLOCKWRITE(BAKF, BUF, 1, K) = 1,
+                'write error on *SYSOLD.COMPILER (disk full?)');
+          K := K + 1
+        END;
+      CLOSE(BAKF, LOCK);
+      CHECK(IORESULT = 0, 'cannot save *SYSOLD.COMPILER');
+      WROTEBAK := TRUE;
+      OLDBLKS := K;
+      CLOSE(OLDF);
+      WRITELN('Old *SYSTEM.COMPILER (', K, ' blocks) saved as *SYSOLD.COMPILER.')
+    END
+END;
+
+PROCEDURE BUILD;
+(* 3. write the new *SYSTEM.COMPILER *)
+BEGIN
+  REWRITE(NEWF, '*SYSTEM.COMPILER');
+  CHECK(IORESULT = 0, 'cannot create the new *SYSTEM.COMPILER');
+  FOR K := 0 TO 255 DO NDICT.W[K] := 0;
+  FOR K := 64 TO 191 DO NDICT.C[K] := ' ';
+  CHECK(BLOCKWRITE(NEWF, NDICT, 1, 0) = 1, 'write error');
+  NEXTBLK := 1;
+  FOR S := 10 TO 15 DO
+    BEGIN
+      ADDR := DICT.W[2*S];
+      LEN := DICT.W[2*S + 1];
+      NB := (LEN + 511) DIV 512;
+      NDICT.W[2*S] := NEXTBLK;
+      NDICT.W[2*S + 1] := LEN;
+      SETNAME(NDICT, S, EXPECT[S]);
+      COPYBLKS(WRKF, NEWF, ADDR, NEXTBLK, NB);
+      NEXTBLK := NEXTBLK + NB
+    END;
+  NDICT.W[2] := NEXTBLK;
+  NDICT.W[3] := 22;
+  SETNAME(NDICT, 1, 'COMPDUMM');
+  CHECK(BLOCKWRITE(NEWF, STUB, 1, NEXTBLK) = 1, 'write error');
+  TOTAL := NEXTBLK + 1;
+  CHECK(BLOCKWRITE(NEWF, NDICT, 1, 0) = 1, 'write error');
+  CLOSE(NEWF, LOCK);
+  CHECK(IORESULT = 0, 'cannot save the new *SYSTEM.COMPILER');
+  CLOSE(WRKF);
+  WRITELN('New *SYSTEM.COMPILER written: ', TOTAL, ' blocks,');
+  WRITELN('  segments 10-15 from *SYSTEM.WRK.CODE + COMPDUMM stub.')
+END;
+
+BEGIN
+  WROTEBAK := FALSE;
+  WRITELN('FIXUP -- install a self-compiled compiler as *SYSTEM.COMPILER');
+  EXPECT[10] := 'PASCALCO';
+  EXPECT[11] := 'COMPINIT';
+  EXPECT[12] := 'DECLARAT';
+  EXPECT[13] := 'BODYPART';
+  EXPECT[14] := 'WRITELIN';
+  EXPECT[15] := 'UNITPART';
+  VERIFY;
+  FINDSYS;
+  MAKESTUB;
+  BACKUP;
+  BUILD;
+  MARKCODE;
+  WRITELN('FIXUP done.')
+END.

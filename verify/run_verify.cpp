@@ -1,0 +1,87 @@
+// run_verify.cpp -- Linux test runner for "Verify P-System": boots the REAL
+// PSystemEngine (via verify/linux-shim) on fresh copies of the disks and runs
+// a keyboard script with VerifyRunner, exactly as the GUI option does.
+//   run_verify <data dir> <SOURCE.BLK> <COMPASM.BLK> <script> <z80|native> <work dir> [record:<log>|compare:<log>] [max seconds]
+#include "PSystemVerify.h"
+#include <thread>
+#include <chrono>
+#include <iostream>
+#include <sstream>
+static std::wstring W(const std::string& s) { return std::wstring(s.begin(), s.end()); }
+int main(int argc, char** argv) {
+    if (argc < 7) { fprintf(stderr, "usage: run_verify <data dir> <SOURCE.BLK> <COMPASM.BLK> <script> <z80|native> <work dir> [trace] [max s]\n"); return 2; }
+    std::string data = argv[1], work = argv[6], trace = argc > 7 ? argv[7] : "";
+    int maxSec = argc > 8 ? atoi(argv[8]) : 7200;
+    std::ifstream sf(argv[4]); std::stringstream ss; ss << sf.rdbuf();
+    std::vector<VerifyStep> steps; std::string err;
+    if (!ParseVerifyScript(ss.str(), steps, err)) { fprintf(stderr, "script: %s\n", err.c_str()); return 2; }
+    if (!PrepareVerifyDisks(data + "/Big_Disk.BLK", argv[2], argv[3], work, err)) { fprintf(stderr, "%s\n", err.c_str()); return 2; }
+    PSystemEngine e; std::wstring werr;
+    if (!e.LoadFiles(W(data + "/pascal.bin"), W(work + "/VERIFY_BOOT.BLK"), W(work + "/VERIFY_SOURCE.BLK"), werr) ||
+        !e.MountUnit9(W(work + "/VERIFY_COMPASM.BLK"), werr)) { fprintf(stderr, "load failed\n"); return 2; }
+    bool native = std::string(argv[5]) == "native";
+    e.SetNativePcodeOps(native);
+    e.SetPreserveZ80RegisterCompat(getenv("VERIFY_COMPAT") != nullptr);
+    bool compare = trace.rfind("compare:", 0) == 0, record = trace.rfind("record:", 0) == 0;
+    if (trace.rfind("text:", 0) == 0) { e.SetTraceAlsoZ80(true); if (!e.EnableTrace(W(trace.substr(5)), werr)) return 2; }
+    if ((compare || record) && !e.StartVerifyLog(W(trace.substr(compare ? 8 : 7)), compare, werr)) { fprintf(stderr, "cannot open the verify log\n"); return 2; }
+    if (getenv("VERIFY_STOP_AT")) e.SetVerifyStopAt(strtoull(getenv("VERIFY_STOP_AT"), nullptr, 10));
+    if (getenv("VERIFY_RECLAIM")) e.SetReclaimInterpreterMemory(true);
+    e.SetConsoleCapture(true);
+    VerifyRunner r(e, steps);
+    std::thread t([&] { e.RunLoop(); });
+    auto t0 = std::chrono::steady_clock::now();
+    VerifyRunner::State st;
+    size_t lastStep = (size_t)-1;
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    while ((st = r.Poll()) == VerifyRunner::RUNNING) {
+        if (e.VerifyMismatch()) break;                        // engine stopped at a verify mismatch
+        if (!e.IsRunning()) { st = r.Poll(); break; }         // engine stopped (e.g. HALTED): let the script see it
+        if (r.StepIndex() != lastStep) {
+            lastStep = r.StepIndex();
+            double el = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+            fprintf(stderr, "[%7.1fs] step %zu/%zu  %s\n", el, r.StepIndex() + 1, r.StepCount(), r.CurrentStepText().c_str());
+        }
+        if (std::chrono::steady_clock::now() - t0 > std::chrono::seconds(maxSec)) { fprintf(stderr, "TIMEOUT\n"); break; }
+        std::this_thread::sleep_for(std::chrono::microseconds(300));
+    }
+    // End the log at a precisely defined point: the script is done and the
+    // system is blocked waiting for a key (no instruction is executing), so
+    // every run's log ends at the same instruction. Only then stop -- which
+    // releases the key wait and lets a few more, unlogged, instructions run.
+    if (st == VerifyRunner::DONE) {
+        for (int k = 0; k < 20000 && !(e.IsWaitingForKey() && e.PendingKeyCount() == 0) && !e.IsSystemHalted(); k++)
+            std::this_thread::sleep_for(std::chrono::microseconds(250));
+    }
+    e.StopVerifyLog();
+    e.Stop(); t.join();
+    if (getenv("VERIFY_DUMP_MEM")) {
+        FILE* mf = fopen(getenv("VERIFY_DUMP_MEM"), "wb"); fwrite(e.DebugMemory(), 1, 65536, mf); fclose(mf);
+        const Z80Regs& g = e.DebugRegs();
+        std::string rp = std::string(getenv("VERIFY_DUMP_MEM")) + ".regs";
+        FILE* rf = fopen(rp.c_str(), "w");
+        fprintf(rf, "A=%02X F=%02X BC=%04X DE=%04X HL=%04X IX=%04X IY=%04X SP=%04X PC=%04X I=%02X R=%02X IM=%d A'=%02X F'=%02X BC'=%02X%02X DE'=%02X%02X HL'=%02X%02X\n",
+                g.A, g.F, g.BC(), g.DE(), g.HL(), g.IX, g.IY, g.SP, g.PC, g.I, g.R, g.IM, g.A_, g.F_, g.B_, g.C_, g.D_, g.E_, g.H_, g.L_);
+        fclose(rf);
+    }
+    if (!e.BootFault().empty()) printf("BOOT FAULT: %s\n", e.BootFault().c_str());
+    if (e.NativelyBooted()) printf("native boot: yes\n");
+    else if (!e.NativeBootNote().empty()) printf("native boot: NO -- %s\n", e.NativeBootNote().c_str());
+    double el = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+    std::string tr = r.Transcript();
+    FILE* tf = fopen((work + "/transcript.txt").c_str(), "wb");
+    for (unsigned char c : tr) { if (c == '\r') c = '\n'; if ((c >= 32 && c < 127) || c == '\n') fputc(c, tf); }
+    fclose(tf);
+    printf("P-code instructions %s: %llu\n", compare ? "compared" : (record ? "recorded" : "run"), (unsigned long long)e.VerifyRecordCount());
+    if (getenv("VERIFY_RECLAIM")) printf("interpreter memory reclaimed: %s%s%s\n", e.InterpreterMemoryReclaimed() ? "yes" : "NO",
+                                          e.ReclaimFault().empty() ? "" : " -- STOPPED: ", e.ReclaimFault().c_str());
+    if (e.VerifyMismatch()) { printf("VERIFY MISMATCH after %.1f s:\n%s\n", el, e.VerifyMismatchText().c_str()); return 3; }
+    if (st == VerifyRunner::DONE) { printf("VERIFY SCRIPT COMPLETED: %zu steps, %zu keys, %.1f s (%s mode)\n", r.StepCount(), r.KeysTyped(), el, native ? "native" : "Z80"); return 0; }
+    printf("VERIFY SCRIPT FAILED after %.1f s: %s\n", el, st == VerifyRunner::FAILED ? r.Error().c_str() : "timeout");
+    if (st != VerifyRunner::FAILED) {
+        const uint8_t* m = e.DebugMemory();
+        printf("  engine at timeout: Z80 PC=%04X halted=%d waitingForKey=%d  IPC(BC)=? SP=? MP=%04X SEGP=%04X\n",
+               e.DebugPC(), (int)e.HasHalted(), (int)e.IsWaitingForKey(), m[0x02F2] | (m[0x02F3] << 8), m[0x02F6] | (m[0x02F7] << 8));
+    }
+    return 1;
+}

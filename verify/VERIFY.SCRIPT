@@ -1,0 +1,95 @@
+# VERIFY.SCRIPT -- "Verify P-System" keyboard script.
+# Compiles the UCSD Pascal II.0 system from source and assembles the Z80
+# P-code interpreter, so that the P-code executed can be logged (Z80 mode)
+# and compared against later runs (native mode).
+#
+# Disks (prepared fresh for every run by the emulator):
+#   #4  boot disk (copy; any work file removed, so no program ever asks
+#       "Throw away current workfile?")
+#   #5  SOURCE:  OS, Filer, editor and interpreter sources; all output files
+#   #9  COMPASM: compiler, Z80 assembler and L2 sources
+# Nothing uses the Filer's Get: with no work file, C(omp and A(ssem ask for
+# the file names themselves, so every prompt below is certain to appear.
+#
+# Format: WAIT "text" / TYPE "keys" (\r = Return, \e = Esc). See PSystemVerify.h.
+
+WAIT "Command:"
+
+# ---- sources on #9: compiler, assembler, L2 ----
+# (YALOE.TEXT is a SEGMENT PROCEDURE for inclusion in a larger program,
+#  not a program by itself, so it is not compiled or put on the volume.)
+TYPE "F"
+WAIT "Filer:"
+TYPE "P"
+WAIT "Prefix"
+TYPE "#9:\r"
+WAIT "Filer:"
+TYPE "Q"
+WAIT "Command:"
+
+TYPE "C"
+WAIT "Compile what text?"
+TYPE "COMPILER\r"
+WAIT "To what codefile?"
+TYPE "#5:COMPILER\r"
+WAIT "Smallest available space"
+WAIT "Command:"
+
+TYPE "C"
+WAIT "Compile what text?"
+TYPE "ASMZ80\r"
+WAIT "To what codefile?"
+TYPE "#5:ASMZ80\r"
+WAIT "Smallest available space"
+WAIT "Command:"
+
+TYPE "C"
+WAIT "Compile what text?"
+TYPE "L2\r"
+WAIT "To what codefile?"
+TYPE "#5:L2\r"
+WAIT "Smallest available space"
+WAIT "Command:"
+
+# ---- sources on #5: operating system, Filer, editor, interpreter ----
+TYPE "F"
+WAIT "Filer:"
+TYPE "P"
+WAIT "Prefix"
+TYPE "#5:\r"
+WAIT "Filer:"
+TYPE "Q"
+WAIT "Command:"
+
+TYPE "C"
+WAIT "Compile what text?"
+TYPE "SYSTEM\r"
+WAIT "To what codefile?"
+TYPE "#5:SYSTEM\r"
+WAIT "Smallest available space"
+WAIT "Command:"
+
+TYPE "C"
+WAIT "Compile what text?"
+TYPE "II.0.FILER\r"
+WAIT "To what codefile?"
+TYPE "#5:FILER\r"
+WAIT "Smallest available space"
+WAIT "Command:"
+
+TYPE "C"
+WAIT "Compile what text?"
+TYPE "EDITOR\r"
+WAIT "To what codefile?"
+TYPE "#5:EDITOR\r"
+WAIT "Smallest available space"
+WAIT "Command:"
+
+TYPE "A"
+WAIT "Assemble what text?"
+TYPE "CPMINC\r"
+WAIT "To what codefile?"
+TYPE "#5:INTERP\r"
+WAIT "Output file for assembled listing"
+TYPE "\r"
+WAIT "Command:"

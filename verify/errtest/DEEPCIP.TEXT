@@ -1,0 +1,12 @@
+PROGRAM DEEPCIP;
+(* CIP from deep in a recursion: DOWN and INNER are nested in OUTER (lex level 2),
+   so every call searches the dynamic chain for OUTER's frame -- 150 frames deep. *)
+VAR R: INTEGER;
+PROCEDURE OUTER;
+  VAR V: INTEGER;
+  FUNCTION INNER(X: INTEGER): INTEGER;
+  BEGIN INNER := X + V END;
+  FUNCTION DOWN(N: INTEGER): INTEGER;
+  BEGIN IF N = 0 THEN DOWN := INNER(1) ELSE DOWN := DOWN(N - 1) END;
+BEGIN V := 100; R := DOWN(150) END;
+BEGIN OUTER; WRITELN('DEEPCIP: ', R) END.

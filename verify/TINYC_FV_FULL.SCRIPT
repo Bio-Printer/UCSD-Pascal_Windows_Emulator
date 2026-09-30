@@ -1,0 +1,21 @@
+# TINYC_FV_FULL.SCRIPT -- the whole Tiny-C compile of FV.TEXT, to "Done." --
+# needs the reclaimed memory (P-Code mode, compatibility off, reclaim).
+# Validation Check 13.
+
+WAIT "Command:"
+TYPE "F"
+WAIT "Filer:"
+TYPE "P"
+WAIT "Prefix"
+TYPE "#9:\r"
+WAIT "Filer:"
+TYPE "Q"
+WAIT "Command:"
+TYPE "X"
+WAIT "Execute what file?"
+TYPE "TINYC\r"
+WAIT "Compile what file?"
+TYPE "/C FV\r"
+WAIT "Compiling"
+WAIT "Generating code"
+WAIT "Command:"

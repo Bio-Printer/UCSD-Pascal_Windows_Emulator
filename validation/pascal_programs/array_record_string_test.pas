@@ -1,0 +1,17 @@
+PROGRAM BATCH3TEST;
+TYPE REC = RECORD A, B: INTEGER; C: CHAR END;
+VAR ARR: ARRAY[1..5] OF INTEGER;
+    R: REC;
+    S: STRING[20];
+    I: INTEGER;
+BEGIN
+FOR I := 1 TO 5 DO ARR[I] := I * 100;
+FOR I := 1 TO 5 DO WRITE(ARR[I], ' ');
+WRITELN;
+R.A := 42; R.B := 99; R.C := 'Z';
+WRITELN('R.A=', R.A, ' R.B=', R.B, ' R.C=', R.C);
+S := 'HELLO';
+WRITELN('S=', S);
+S := CONCAT(S, ' WORLD');
+WRITELN('S=', S);
+END.

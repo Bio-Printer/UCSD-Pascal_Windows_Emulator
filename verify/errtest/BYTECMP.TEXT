@@ -1,0 +1,14 @@
+PROGRAM BYTECMP;
+(* PACKED ARRAY OF CHAR comparisons: EQU/NEQ/LES/LEQ/GRT/GEQ with type BYTEC. *)
+VAR A, B: PACKED ARRAY[1..8] OF CHAR; N: INTEGER;
+BEGIN
+  A := 'ABCDEFGH'; B := 'ABCDEFGX'; N := 0;
+  IF A < B THEN N := N + 1;
+  IF A <= B THEN N := N + 1;
+  IF B > A THEN N := N + 1;
+  IF B >= A THEN N := N + 1;
+  IF A <> B THEN N := N + 1;
+  IF A = 'ABCDEFGH' THEN N := N + 1;
+  IF NOT (A > B) THEN N := N + 1;
+  WRITELN('BYTECMP: ', N, ' of 7 comparisons true')
+END.

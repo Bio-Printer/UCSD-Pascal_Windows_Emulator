@@ -1,0 +1,22 @@
+# TINYC_FV.SCRIPT -- the Tiny-C compiler (TINYC.CODE on CXPBUG.BLK, unit 9)
+# compiling FV.TEXT, up to "Generating code" (without reclaimed memory the
+# code generator then needs more stack than there is). Its recursive-descent
+# parser calls into other segments far more than 64 frames deep: the native
+# CXP bug of v1.83 (see verify/errtest/DEEPCXP.README.md). Validation Check 13.
+
+WAIT "Command:"
+TYPE "F"
+WAIT "Filer:"
+TYPE "P"
+WAIT "Prefix"
+TYPE "#9:\r"
+WAIT "Filer:"
+TYPE "Q"
+WAIT "Command:"
+TYPE "X"
+WAIT "Execute what file?"
+TYPE "TINYC\r"
+WAIT "Compile what file?"
+TYPE "/C FV\r"
+WAIT "Compiling"
+WAIT "Generating code"

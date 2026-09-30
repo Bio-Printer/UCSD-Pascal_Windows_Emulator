@@ -1,0 +1,6 @@
+E16.CODE, E17.CODE and E18.CODE on ERRTEST.BLK are ESEG.TEXT compiled by the
+P-System, with its segment dictionary damaged on purpose (slot 10 = SEGMENT
+PROCEDURE S):
+  E16: segment length 0          -> "No proc in seg-table" (NOPROC, READSEG 13E8)
+  E17: block 30000 (off the disk) -> system I/O error       (SYIOER, READSEG 1420)
+  E18: block 2 (the main program) -> "No proc in seg-table" (NOPROC, READSEG 142A)

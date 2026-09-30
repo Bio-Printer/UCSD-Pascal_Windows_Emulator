@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;cc;cxx;c;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;hm;inl;inc;ipp;xsd</Extensions>
+    </Filter>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="Engine">
+      <UniqueIdentifier>{2C8D5F3E-9A1B-4A7C-8E3D-1F5A6B2C9D30}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="targetver.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="stdafx.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="resource.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="UCSDPascalApp.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="MainFrm.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="OpcodeCountDlg.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="PSystemEngine.h">
+      <Filter>Engine</Filter>
+    </ClInclude>
+    <ClInclude Include="Version.h">
+      <Filter>Engine</Filter>
+    </ClInclude>
+    <ClInclude Include="PCodeOpcodes.h">
+      <Filter>Engine</Filter>
+    </ClInclude>
+    <ClInclude Include="UcsdText.h">
+      <Filter>Engine</Filter>
+    </ClInclude>
+    <ClInclude Include="PSystemVerify.h">
+      <Filter>Engine</Filter>
+    </ClInclude>
+    <ClInclude Include="UcsdReal.h">
+      <Filter>Engine</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="NativeSegReturn.inc">
+      <Filter>Engine</Filter>
+    </None>
+    <None Include="NativeCxp.inc">
+      <Filter>Engine</Filter>
+    </None>
+    <None Include="NativeSegLoad.inc">
+      <Filter>Engine</Filter>
+    </None>
+    <None Include="NativeOps.inc">
+      <Filter>Engine</Filter>
+    </None>
+    <None Include="NativeOpsTargets.inc">
+      <Filter>Engine</Filter>
+    </None>
+    <None Include="NativeUnionb.inc">
+      <Filter>Engine</Filter>
+    </None>
+    <None Include="NativePowrc.inc">
+      <Filter>Engine</Filter>
+    </None>
+    <None Include="NativeErrors.inc">
+      <Filter>Engine</Filter>
+    </None>
+    <None Include="PMachineTables.inc">
+      <Filter>Engine</Filter>
+    </None>
+    <None Include="NativeRealc.inc">
+      <Filter>Engine</Filter>
+    </None>
+    <None Include="NativeCsp.inc">
+      <Filter>Engine</Filter>
+    </None>
+    <ClInclude Include="z80.h">
+      <Filter>Engine</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="stdafx.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="UCSDPascalApp.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="MainFrm.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="OpcodeCountDlg.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="PSystemEngine.cpp">
+      <Filter>Engine</Filter>
+    </ClCompile>
+    <ClCompile Include="z80.cpp">
+      <Filter>Engine</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="UCSDPascal.rc">
+      <Filter>Resource Files</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="res\UCSDPascal.ico">
+      <Filter>Resource Files</Filter>
+    </Image>
+  </ItemGroup>
+</Project>

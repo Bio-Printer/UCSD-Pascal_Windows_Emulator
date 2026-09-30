@@ -1,0 +1,195 @@
+// UCSDPascal.rc
+#include "resource.h"
+#include <afxres.h>
+#include <commctrl.h>
+
+#pragma code_page(1252)
+
+/////////////////////////////////////////////////////////////////////////////
+// Menu
+
+IDR_MAINFRAME MENU
+BEGIN
+    POPUP "&File"
+    BEGIN
+        MENUITEM "Open &Big Disk (Unit #4)...\tCtrl+B", ID_FILE_OPEN_BIGDISK
+        MENUITEM "&Unmount Unit #4",                      ID_FILE_UNMOUNT_4
+        MENUITEM SEPARATOR
+        MENUITEM "Open &Scratch Disk (Unit #5)...",       ID_FILE_OPEN_SCRATCH
+        MENUITEM "U&nmount Unit #5",                      ID_FILE_UNMOUNT_5
+        MENUITEM SEPARATOR
+        MENUITEM "Open Unit #&9...",                      ID_FILE_OPEN_UNIT9
+        MENUITEM "Unmount Unit #&9",                      ID_FILE_UNMOUNT_9
+        MENUITEM SEPARATOR
+        MENUITEM "Open Unit #1&0...",                     ID_FILE_OPEN_UNIT10
+        MENUITEM "Unmount Unit #1&0",                     ID_FILE_UNMOUNT_10
+        MENUITEM SEPARATOR
+        MENUITEM "E&xit\tAlt+F4",                         ID_FILE_EXIT
+    END
+    POPUP "&Options"
+    BEGIN
+        MENUITEM "Enable &Trace Logging...",             ID_OPTIONS_TRACE
+        MENUITEM SEPARATOR
+        POPUP "&Execution Mode"
+        BEGIN
+            MENUITEM "&P-Code Mode  (native C opcode replacements active - faster)", ID_OPTIONS_EXECMODE_PCODE
+            MENUITEM "&Z80 Mode  (pure Z80 execution - slower)",  ID_OPTIONS_EXECMODE_Z80
+        END
+        MENUITEM "Preserve Z80 &Register Compatibility", ID_OPTIONS_PRESERVE_Z80_REGS
+        MENUITEM "Reclaim Z80 Interpreter and BIOS &Memory", ID_OPTIONS_RECLAIM_INTERP
+        MENUITEM "Use PC &Date and Time",               ID_OPTIONS_HOST_CLOCK
+        MENUITEM SEPARATOR
+        POPUP "&Verify P-System"
+        BEGIN
+            MENUITEM "&Record Reference Log (Z80 mode)...",  ID_OPTIONS_VERIFY_RECORD
+            MENUITEM "Record Reference Log (P-Code mode, reclaimed &memory)...", ID_OPTIONS_VERIFY_RECORD_RECLAIMED
+            MENUITEM "&Verify Against Reference Log...",     ID_OPTIONS_VERIFY_COMPARE
+            MENUITEM SEPARATOR
+            MENUITEM "&Cancel Verification",                 ID_OPTIONS_VERIFY_CANCEL
+        END
+        MENUITEM SEPARATOR
+        MENUITEM "&Import Windows File to Volume...",    ID_OPTIONS_IMPORT_FILE
+        MENUITEM "&Export UCSD P-System File to Windows...", ID_OPTIONS_EXPORT_FILE
+        MENUITEM SEPARATOR
+        POPUP "&Font Size"
+        BEGIN
+            MENUITEM "&Small",                           ID_OPTIONS_FONT_SMALL
+            MENUITEM "&Medium",                           ID_OPTIONS_FONT_MEDIUM
+            MENUITEM "&Large",                            ID_OPTIONS_FONT_LARGE
+        END
+    END
+    POPUP "&View"
+    BEGIN
+        MENUITEM "&Op Code Count...",                    ID_VIEW_OPCODECOUNT
+    END
+    POPUP "&Help"
+    BEGIN
+        MENUITEM "&About UCSD Pascal...",                ID_HELP_ABOUT
+    END
+END
+
+/////////////////////////////////////////////////////////////////////////////
+// Dialog
+
+IDD_ABOUTBOX DIALOGEX 0, 0, 240, 90
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "About UCSD Pascal"
+FONT 8, "MS Shell Dlg"
+BEGIN
+    ICON            IDR_MAINFRAME,IDC_STATIC,14,14,21,20
+    LTEXT           "UCSD Pascal II.0 Emulator",IDC_STATIC,42,14,140,8,SS_NOPREFIX
+    LTEXT           "A Z80 emulator running the real UCSD Pascal II.0 system-micro image.",IDC_STATIC,42,28,180,16
+    DEFPUSHBUTTON   "OK",IDOK,183,69,50,14,WS_GROUP
+END
+
+IDD_OPCODECOUNT DIALOGEX 0, 0, 290, 280
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Op Code Count"
+FONT 8, "MS Shell Dlg"
+BEGIN
+    CONTROL         "", IDC_OPCODE_LIST, "SysListView32",
+                    LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | WS_BORDER | WS_TABSTOP,
+                    7, 7, 276, 210
+    LTEXT           "", IDC_OPCODE_TOTALS, 7, 221, 276, 38
+    PUSHBUTTON      "Refresh",  IDC_OPCODE_REFRESH, 7,   261, 50, 14
+    DEFPUSHBUTTON   "Close",    IDOK,                233, 261, 50, 14, WS_GROUP
+END
+
+// Dialog for selecting which UCSD Pascal volume to import into.
+// Radio buttons are enabled/disabled at runtime based on which unit
+// images are actually loaded; their labels are also updated at runtime
+// to include the volume name read from the disk image.
+IDD_IMPORT_UNIT DIALOGEX 0, 0, 220, 110
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Import File to UCSD Pascal Volume"
+FONT 8, "MS Shell Dlg"
+BEGIN
+    LTEXT           "Select the target volume:", IDC_STATIC, 8, 8, 200, 9
+    CONTROL         "Unit #&4", IDC_IMPORT_RADIO4,  "Button",
+                    BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP, 14, 22, 196, 12
+    CONTROL         "Unit #&5", IDC_IMPORT_RADIO5,  "Button",
+                    BS_AUTORADIOBUTTON, 14, 36, 196, 12
+    CONTROL         "Unit #&9", IDC_IMPORT_RADIO9,  "Button",
+                    BS_AUTORADIOBUTTON, 14, 50, 196, 12
+    CONTROL         "Unit #1&0", IDC_IMPORT_RADIO10, "Button",
+                    BS_AUTORADIOBUTTON, 14, 64, 196, 12
+    DEFPUSHBUTTON   "OK",     IDOK,     109, 88, 45, 14
+    PUSHBUTTON      "Cancel", IDCANCEL, 162, 88, 45, 14
+END
+
+// Export dialog: choose a source volume, then pick a file to export to Windows.
+// The file list is populated at runtime from the selected unit's directory;
+// the combo is populated with the subset of units that actually have images
+// loaded. Selecting a different unit refreshes the list via CBN_SELCHANGE.
+// Trace logging options: enable/disable, choose log file. Execution mode
+// (P-Code/Z80) and Preserve Z80 Register Compatibility are now their own
+// items directly under the Options menu, independent of trace logging.
+IDD_TRACE_OPTIONS DIALOGEX 0, 0, 310, 100
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Trace Logging Options"
+FONT 8, "MS Shell Dlg"
+BEGIN
+    AUTOCHECKBOX    "Enable trace logging", IDC_TRACE_ENABLE, 8, 8, 140, 12, WS_TABSTOP
+
+    LTEXT           "Log file:", IDC_STATIC, 8, 28, 32, 9
+    EDITTEXT        IDC_TRACE_PATH, 44, 26, 215, 14, ES_AUTOHSCROLL | WS_TABSTOP
+    PUSHBUTTON      "...", IDC_TRACE_BROWSE, 264, 26, 36, 14
+
+    // P-Code log is always included when trace is enabled (one line per opcode
+    // with all P-machine registers).
+    AUTOCHECKBOX    "Also log Z80 instructions  (intermixed with P-Code; logs every Z80 cpu.step() including startup code before first BACK)",
+                    IDC_TRACE_ALSO_Z80, 8, 50, 292, 20, WS_TABSTOP
+
+    DEFPUSHBUTTON   "OK",     IDOK,     194, 76, 50, 14
+    PUSHBUTTON      "Cancel", IDCANCEL, 252, 76, 50, 14
+END
+
+
+IDD_EXPORT_FILE DIALOGEX 0, 0, 300, 220
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Export UCSD P-System File to Windows"
+FONT 8, "MS Shell Dlg"
+BEGIN
+    LTEXT           "Volume:", IDC_STATIC, 8, 10, 32, 9
+    COMBOBOX        IDC_EXPORT_UNIT_COMBO, 44, 8, 248, 80,
+                    CBS_DROPDOWNLIST | CBS_SORT | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Files on this volume:", IDC_STATIC, 8, 26, 100, 9
+    LISTBOX         IDC_EXPORT_FILE_LIST, 8, 37, 284, 148,
+                    LBS_NOINTEGRALHEIGHT | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "", IDC_EXPORT_INFO, 8, 188, 200, 9
+    DEFPUSHBUTTON   "Export...", IDOK,     186, 198, 50, 14
+    PUSHBUTTON      "Cancel",   IDCANCEL, 242, 198, 50, 14, WS_GROUP
+END
+
+/////////////////////////////////////////////////////////////////////////////
+// Icon
+
+IDR_MAINFRAME           ICON                    "res\\UCSDPascal.ico"
+
+/////////////////////////////////////////////////////////////////////////////
+// Version
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,89,0,0    // keep in sync with APP_VERSION_W in Version.h (currently "1.89")
+ PRODUCTVERSION 1,89,0,0
+ FILEFLAGSMASK 0x3fL
+ FILEFLAGS 0x0L
+ FILEOS 0x40004L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "FileDescription",  "UCSD Pascal II.0 Emulator"
+            VALUE "FileVersion",      "1.89"
+            VALUE "ProductName",      "UCSD Pascal II.0 Emulator"
+            VALUE "ProductVersion",   "1.89"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END
