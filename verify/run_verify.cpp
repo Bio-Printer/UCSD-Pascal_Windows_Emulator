@@ -4,6 +4,7 @@
 //   run_verify <data dir> <SOURCE.BLK> <COMPASM.BLK> <script> <z80|native> <work dir> [record:<log>|compare:<log>] [max seconds]
 #include "PSystemVerify.h"
 #include <thread>
+#include <filesystem>
 #include <chrono>
 #include <iostream>
 #include <sstream>
@@ -19,6 +20,26 @@ int main(int argc, char** argv) {
     PSystemEngine e; std::wstring werr;
     if (!e.LoadFiles(W(data + "/pascal.bin"), W(work + "/VERIFY_BOOT.BLK"), W(work + "/VERIFY_SOURCE.BLK"), werr) ||
         !e.MountUnit9(W(work + "/VERIFY_COMPASM.BLK"), werr)) { fprintf(stderr, "load failed\n"); return 2; }
+    if (const char* u10 = getenv("VERIFY_UNIT10")) {          // a volume on unit #10 (used in place)
+        std::wstring uerr;
+        if (!e.MountUnit10(W(u10), uerr)) { fprintf(stderr, "cannot mount unit #10\n"); return 2; }
+    }
+    // VERIFY_IMPORT="unit:path": Options > Import File, before booting -- or,
+    // with VERIFY_IMPORT_STEP=n, while the system runs, when the script
+    // reaches step n (counting from 0)
+    auto doImport = [&]() {
+        const char* imp = getenv("VERIFY_IMPORT");
+        std::string spec = imp; size_t c = spec.find(':');
+        std::wstring ierr = e.ImportFileToVolume(atoi(spec.substr(0, c).c_str()), W(spec.substr(c + 1)));
+        fprintf(stderr, "import %s: %s\n", imp, ierr.empty() ? "OK" : std::string(ierr.begin(), ierr.end()).c_str());
+    };
+    const long importStep = getenv("VERIFY_IMPORT") && getenv("VERIFY_IMPORT_STEP") ? atol(getenv("VERIFY_IMPORT_STEP")) : -1;
+    if (getenv("VERIFY_IMPORT") && importStep < 0) doImport();
+    bool imported = false;
+    // VERIFY_TOUCH="step:path": at script step n, change the file's last-write
+    // time from outside the engine, as a git pull or a copy would
+    const long touchStep = getenv("VERIFY_TOUCH") ? atol(getenv("VERIFY_TOUCH")) : -1;
+    bool touched = false;
     bool native = std::string(argv[5]) == "native";
     e.SetNativePcodeOps(native);
     e.SetPreserveZ80RegisterCompat(getenv("VERIFY_COMPAT") != nullptr);
@@ -37,6 +58,14 @@ int main(int argc, char** argv) {
     while ((st = r.Poll()) == VerifyRunner::RUNNING) {
         if (e.VerifyMismatch()) break;                        // engine stopped at a verify mismatch
         if (!e.IsRunning()) { st = r.Poll(); break; }         // engine stopped (e.g. HALTED): let the script see it
+        if (importStep >= 0 && !imported && r.StepIndex() >= (size_t)importStep) { imported = true; doImport(); }
+        if (touchStep >= 0 && !touched && r.StepIndex() >= (size_t)touchStep) {   // "git pull" behind the emulator's back
+            touched = true;
+            std::string spec = getenv("VERIFY_TOUCH"); std::string p = spec.substr(spec.find(':') + 1);
+            std::error_code ec;
+            std::filesystem::last_write_time(p, std::filesystem::last_write_time(p, ec) + std::chrono::hours(1), ec);
+            fprintf(stderr, "touched %s: %s\n", p.c_str(), ec ? "FAILED" : "OK");
+        }
         if (r.StepIndex() != lastStep) {
             lastStep = r.StepIndex();
             double el = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();

@@ -29,6 +29,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <chrono>
+#include <filesystem>
 
 // ---- UCSD 4-byte REAL format conversion -----------------------------
 // Format, per FPL.TEXT's own documented comment: four bytes [exp]
@@ -206,8 +207,10 @@ bool PSystemEngine::LoadFiles(const std::wstring& pascalBinPath,
         return false;
     }
     m_volDrive0Path = bigDiskPath;
+    StampDrive(0);
     // Empty/scratch disk (unit 5) is optional -- not every session needs it.
     if (LoadWholeFile(emptyDiskPath, m_volDrive1)) m_volDrive1Path = emptyDiskPath;
+    StampDrive(1);
 
     FILE* pf = nullptr;
     _wfopen_s(&pf, pascalBinPath.c_str(), L"rb");
@@ -235,6 +238,7 @@ bool PSystemEngine::MountUnit9(const std::wstring& path, std::wstring& errorMess
         return false;
     }
     m_volDrive2Path = path;
+    StampDrive(2);
     return true;
 }
 
@@ -244,6 +248,7 @@ bool PSystemEngine::MountUnit10(const std::wstring& path, std::wstring& errorMes
         return false;
     }
     m_volDrive3Path = path;
+    StampDrive(3);
     return true;
 }
 
@@ -490,11 +495,70 @@ std::wstring* PSystemEngine::DrivePath(int drive) {
     return nullptr;
 }
 
+// ---------------------------------------------------------------------------
+// Protection against writing an old copy over a newer file
+// ---------------------------------------------------------------------------
+// The emulator reads a whole volume image into memory when it mounts it and
+// writes each block the P-System writes straight back into the file. If the
+// file is replaced while the emulator runs (a git pull of the volumes, a copy
+// from Explorer, another program), those writes would put the OLD copy's
+// blocks -- the directory above all -- into the NEW file, leaving a mix of
+// the two. So the file's size and last-write time are recorded whenever the
+// emulator loads or writes it, and a write to a file that no longer matches
+// is refused. The UI warns once (TakeChangedOnDiskUnit); re-opening the unit
+// or restarting the emulator loads the new file.
+
+static bool StatImageFile(const std::wstring& path, uint64_t& size, int64_t& mtime) {
+    std::error_code ec;
+    const std::filesystem::path p(path);
+    size = (uint64_t)std::filesystem::file_size(p, ec);
+    if (ec) return false;
+    mtime = (int64_t)std::filesystem::last_write_time(p, ec).time_since_epoch().count();
+    return !ec;
+}
+
+void PSystemEngine::StampDrive(int drive) {
+    auto* path = DrivePath(drive);
+    if (drive < 0 || drive > 3 || !path) return;
+    DiskStamp& s = m_diskStamp[drive];
+    s.valid = !path->empty() && StatImageFile(*path, s.size, s.mtime);
+    m_changedOnDisk[drive] = false;
+}
+
+bool PSystemEngine::DriveFileUnchanged(int drive) {
+    if (drive < 0 || drive > 3) return true;
+    if (m_changedOnDisk[drive]) return false;           // already refused: stay refused
+    const DiskStamp& s = m_diskStamp[drive];
+    if (!s.valid) return true;                          // nothing recorded: no check
+    uint64_t size = 0; int64_t mtime = 0;
+    if (StatImageFile(*DrivePath(drive), size, mtime) && size == s.size && mtime == s.mtime)
+        return true;
+    m_changedOnDisk[drive] = true;
+    static const int units[4] = { 4, 5, 9, 10 };
+    m_changedOnDiskPending.store(units[drive]);
+    return false;
+}
+
+int PSystemEngine::TakeChangedOnDiskUnit(std::wstring& pathOut) {
+    const int unit = m_changedOnDiskPending.exchange(0);
+    if (unit) {
+        const int drive = unit == 4 ? 0 : unit == 5 ? 1 : unit == 9 ? 2 : 3;
+        pathOut = *DrivePath(drive);
+    }
+    return unit;
+}
+
+bool PSystemEngine::IsChangedOnDisk(int unit) const {
+    const int drive = unit == 4 ? 0 : unit == 5 ? 1 : unit == 9 ? 2 : unit == 10 ? 3 : -1;
+    return drive >= 0 && m_changedOnDisk[drive];
+}
+
 bool PSystemEngine::FlushDriveRegion(int drive, long fileOffset, int length) {
     auto* img = DriveImage(drive);
     auto* path = DrivePath(drive);
     if (!img || !path || path->empty()) { m_diskFlushFailCount++; return false; }
     if (fileOffset < 0 || (size_t)(fileOffset + length) > img->size()) { m_diskFlushFailCount++; return false; }
+    if (!DriveFileUnchanged(drive)) { m_diskFlushFailCount++; return false; }   // file replaced since loaded
 
     // "r+b" requires the file to already exist (it does -- we loaded it
     // from here) and lets us seek+overwrite in place without truncating
@@ -506,6 +570,7 @@ bool PSystemEngine::FlushDriveRegion(int drive, long fileOffset, int length) {
               (fwrite(img->data() + fileOffset, 1, (size_t)length, f) == (size_t)length);
     fclose(f);
     if (ok) m_diskFlushOkCount++; else m_diskFlushFailCount++;
+    StampDrive(drive);                                  // our own write: the new baseline
     return ok;
 }
 
@@ -578,6 +643,8 @@ void PSystemEngine::UnmountUnit(int unit) {
     auto* path = DrivePath(drive);
     if (img)  img->clear();
     if (path) path->clear();
+    m_diskStamp[drive] = DiskStamp();
+    m_changedOnDisk[drive] = false;
 }
 
 // ---------------------------------------------------------------------------

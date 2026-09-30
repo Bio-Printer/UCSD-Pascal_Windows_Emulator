@@ -35,6 +35,7 @@
 #include <string>
 #include <chrono>
 #include <cstdint>
+#include <atomic>
 #include <fstream>
 #include <windows.h>
 #include "PCodeOpcodes.h"
@@ -233,6 +234,14 @@ public:
     // matters enough for a status-bar indicator.
     uint64_t DebugDiskFlushOkCount() const { return m_diskFlushOkCount; }
     uint64_t DebugDiskFlushFailCount() const { return m_diskFlushFailCount; }
+    // A mounted volume's image FILE was changed by something else (a git
+    // pull, another program) after the emulator loaded it: writes to it are
+    // refused (see FlushDriveRegion) so the emulator's older copy does not
+    // overwrite the new file. Returns the unit number (4, 5, 9, 10) once,
+    // then 0; the UI shows a warning. Re-opening the unit (or restarting)
+    // reloads the file and clears the refusal.
+    int TakeChangedOnDiskUnit(std::wstring& pathOut);
+    bool IsChangedOnDisk(int unit) const;
 
     // Instruction-frequency instrumentation, purely for deciding which
     // p-code opcode to port to native C next. m_opcodeFetchCount[op]
@@ -321,6 +330,15 @@ private:
     // later "save" step. Empty if that drive was never mounted.
     std::wstring m_volDrive0Path, m_volDrive1Path, m_volDrive2Path, m_volDrive3Path;
     uint64_t m_diskFlushOkCount = 0, m_diskFlushFailCount = 0;
+    // Size and last-write time of each drive's image file as the emulator
+    // last saw it (loaded it, or wrote it itself): FlushDriveRegion refuses
+    // to write when the file no longer matches.
+    struct DiskStamp { bool valid = false; uint64_t size = 0; int64_t mtime = 0; };
+    DiskStamp m_diskStamp[4];
+    bool m_changedOnDisk[4] = { false, false, false, false };
+    std::atomic<int> m_changedOnDiskPending{ 0 };   // unit number for the UI, 0 = none
+    void StampDrive(int drive);
+    bool DriveFileUnchanged(int drive);
     BigDiskState m_bd;
     FdcState m_fdc;
 

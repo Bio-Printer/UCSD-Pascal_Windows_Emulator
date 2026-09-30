@@ -529,6 +529,22 @@ void CMainFrame::OnTimer(UINT_PTR nIDEvent) {
             RestartEngineWithCurrentPaths();
             return;
         }
+        if (m_engine) {
+            // A mounted volume's file was replaced while the emulator ran
+            // (e.g. a git pull): the engine refuses to write into it, so its
+            // older copy cannot overwrite the new file. Say so once.
+            std::wstring changedPath;
+            const int unit = m_engine->TakeChangedOnDiskUnit(changedPath);
+            if (unit) {
+                CString msg;
+                msg.Format(L"The volume file on unit #%d was changed outside the emulator after it was mounted:\n\n%s\n\n"
+                           L"To protect the new file, the emulator will not write to it: anything the P-System "
+                           L"writes to unit #%d from now on is NOT saved.\n\n"
+                           L"Re-open the unit (File > Open Unit #%d) or restart the emulator to load the new file.",
+                           unit, changedPath.c_str(), unit, unit);
+                AfxMessageBox(msg, MB_ICONWARNING);
+            }
+        }
         if (m_engine && !m_reclaimFaultShown && !m_engine->ReclaimFault().empty()) {
             m_reclaimFaultShown = true;
             CString msg(L"The P-System stopped: ");
