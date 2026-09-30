@@ -1,0 +1,19 @@
+# Visual Studio build output and per-machine state
+bin/
+obj/
+x64/
+Debug/
+Release/
+.vs/
+*.aps
+*.ipch
+*.VC.db
+*.VC.opendb
+
+# editor backups
+*~
+*.swp
+*.bak
+
+# the emulated printer's output (written while the emulator runs)
+UCSDPascal/C_/Tmp/
