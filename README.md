@@ -11,6 +11,51 @@ with native P-Code execution (`UCSDPascal/PSystemEngine.cpp` and the
 * **Volumes:** File > Open Unit #4 / #5 / #9 / #10. The disk images live in
   https://github.com/Bio-Printer/UCSD-Pascal-Volumes (`BLK_format/`).
 
+## Harvard mode: separate I & D space (version 1.92)
+
+Options > **Harvard Mode  Separate I & D space** (on by default, remembered
+in the registry as `Options\HarvardMode`). The P-System's code segments are
+kept in a 64K instruction space of their own (I-space) instead of on the
+P-machine stack, so the stack and heap (D-space) get the memory the code
+took. It takes effect when the P-System restarts, and only in the reclaimed
+layout: P-Code mode, Preserve Z80 Register Compatibility off, Reclaim Z80
+Interpreter and BIOS Memory on (the item is grayed out otherwise, and the
+P-System runs in the normal layout). Z80 mode is unchanged.
+
+Free memory (Linux runs of the same engine):
+
+| | normal reclaimed layout | Harvard mode |
+|---|---|---|
+| Pascal compiler compiling itself (Verify build) | 7,782 words | 21,477 words |
+| Tiny-C compiling PI.C, Preprocessing | 14,175 words | 21,834 words |
+| Tiny-C voltest, least memory (linking) | 8,111 words | 15,770 words |
+
+What it means for programs (details: `PSystemEngine::SetHarvard` in
+`UCSDPascal/PSystemEngine.h`):
+
+* String and packed-array constants in the code (LSA, LPA) are copied to a
+  constant pool in D-space when their segment is loaded; the pool lives and
+  dies where the segment would have been on the stack.
+* Tiny-C's `/Z` call sequence, which stores into its own CXP operands, is
+  recognised and that one store writes I-space.
+* Run-time errors: EXECERROR's PRINTLOCS reads the failing location through
+  pointers into the code; the engine gives it a copy, so `S#, P#, I#` are
+  the same as in the normal layout. Returning from the error (ESC) works.
+* **Unit 64** reads and writes I-space as data: `UNITREAD(64, buf, n, addr)`
+  / `UNITWRITE(64, buf, n, addr)` copy n bytes from / to I-space at addr
+  (the block argument); `UNITCLEAR(64)` does nothing; IORESULT 0. In every
+  other layout, and in Z80 mode, unit 64 is a bad unit (IORESULT 2).
+* Assembly-language procedures cannot run (as with memory reclaimed).
+* Options > Verify P-System runs in the normal layouts as before (its
+  reference logs are unchanged); the Harvard layout is verified by
+  `validation/run_all.sh` with `VERIFY_HARVARD=1`.
+
+## Pause / Resume
+
+Options > **Pause** (the first item) stops the P-System where it is; the item
+then reads **Resume**. Keys typed while paused are kept and delivered after
+Resume. The status bar says "Paused". Not available during Verify P-System.
+
 ## Volume files changed while the emulator runs
 
 The emulator reads each volume image into memory when it mounts it and
@@ -41,7 +86,10 @@ memory), `VERIFY_UNIT10=path` (mount unit #10 in place),
 `VERIFY_IMPORT=unit:path` (Options > Import File; with
 `VERIFY_IMPORT_STEP=n` at script step n, while the system runs),
 `VERIFY_TOUCH=n:path` (at step n, change the file's last-write time from
-outside, as a pull would -- tests the protection above).
+outside, as a pull would -- tests the protection above),
+`VERIFY_HARVARD=1` (with `VERIFY_RECLAIM=1`: Harvard mode; prints a
+"harvard layout:" line), `VERIFY_PAUSE=n:ms` (at step n, Pause for ms
+milliseconds, report how many P-code instructions ran meanwhile, Resume).
 
 
 # Engine PR: CSP 138 (CALLI), version 1.91

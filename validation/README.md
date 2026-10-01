@@ -123,6 +123,18 @@ comparisons) and programs that each trigger one run-time error
 (see verify/README.md). Recorded in Z80 mode, then a native run must match
 it instruction for instruction, and a run with the interpreter's memory
 reclaimed must complete with all 14 error reports (HALT prints none).
+v1.92: 24 programs and 18 error reports; also STRCONST (string and
+packed-array constants, 13 checks) and HCODE (an error in a segment
+procedure resumed with ESC, and unit 64); every `S#, P#, I#` line of the
+reclaimed run must be identical to the normal native run's.
+
+## Harvard mode (VERIFY_HARVARD=1)
+
+`VERIFY_HARVARD=1 bash run_all.sh` runs every check with Harvard mode on
+wherever the reclaimed layout is used (Checks 8, 9, 11, 12, 13; the other
+checks do not use that layout). v1.92: all 13 pass; Check 8 and 11 report
+21,477 free words (7,782 without it); Check 9 expects the HCODE lines for
+unit 64 as I-space instead of a bad unit.
 
 ## Check 10: native boot (full mode only)
 
@@ -275,6 +287,11 @@ procedures), NativeOps.inc + NativeOpsTargets.inc (the 15 operators added
 in v1.67; UcsdReal.h at file scope). UcsdReal.h and PCodeOpcodes.h are
 shared too and covered by the same identical-copy check. Each host binds them with four macros defined right after its
 own #include "PCodeOpcodes.h": PM_MEM, PM_CPU, PM_PRESERVE, PM_COUNT(op).
+Since v1.92 also the code-memory accessors PM_CODE8 / PM_CODE16 / PM_CODEW8
+(every read or write of code goes through them) and the Harvard hooks
+PM_HARVARD, PM_CODE_PLACE, PM_CODE_COMMIT, PM_CODE_FREE, PM_CONST_SCAN,
+PM_CONST_INSTALL, PM_ERR_ARM, PM_ERR_SHADOW, PM_CODE_UNIT (no-ops in the
+linux-harness programs, which have no Harvard layout).
 When editing one, edit the UCSDPascal/ copy and copy it over the
 linux-harness/ one; `diff UCSDPascal/X.inc linux-harness/X.inc` must be
 empty before packaging.

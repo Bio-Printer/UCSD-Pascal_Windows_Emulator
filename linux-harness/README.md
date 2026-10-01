@@ -236,6 +236,15 @@ shared code still behaves as before. CALLI itself is tested by Tiny-C's
 `tests/funcptr.c` and `tests/funcseg.c`, the doubles by `tests/doubles.c` and
 `tools/f12test.py` (https://github.com/Bio-Printer/UCSD-C).
 
+Version 1.92 (Harvard mode, see `PSystemEngine::SetHarvard`): the shared
+`.inc` files read and write code only through `PM_CODE8` / `PM_CODE16` /
+`PM_CODEW8`, and call the Harvard hooks (`PM_HARVARD`, `PM_CODE_PLACE`,
+`PM_CODE_COMMIT`, `PM_CODE_FREE`, `PM_CONST_SCAN`, `PM_CONST_INSTALL`,
+`PM_ERR_ARM`, `PM_ERR_SHADOW`, `PM_CODE_UNIT`). `harness.cpp` and
+`remove_file.cpp` define the accessors on their single memory and the hooks
+as no-ops (`PM_HARVARD` is false), so the trace-diff still runs the code
+exactly as before. The `.inc` files stay identical to `UCSDPascal/`.
+
 `z80.h`/`z80.cpp` here are byte-for-byte copies of `UCSDPascal/z80.h`/
 `z80.cpp`. That file changes rarely; if it ever does change in the real
 project, copy the change here too, or this harness will quietly stop
