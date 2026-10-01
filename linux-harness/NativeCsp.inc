@@ -390,6 +390,7 @@ if (!PM_PRESERVE) {
             cspDone = true; break;
         }
         case 9: {  // TIM(VAR hitime, lotime: integer)
+            NativeClockUpdate();                             // the host clock (if on): PSystemEngine::SetHostClock
             uint16_t loAddr = PopStackWord(); csWr(loAddr, csRd(PM_V(0x031A)));
             uint16_t hiAddr = PopStackWord(); csWr(hiAddr, csRd(PM_V(0x031C)));
             cspDone = true; break;

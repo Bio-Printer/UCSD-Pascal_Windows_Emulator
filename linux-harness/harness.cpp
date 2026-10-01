@@ -446,6 +446,10 @@ public:
     }
     bool NativeBiosCall(uint8_t, uint8_t, uint8_t*, bool) { return false; }
 
+    // PSystemEngine::NativeClockUpdate (NativeCsp.inc, CSP 9 TIM): the host clock is
+    // an option of the Windows program, off by default, so here it does nothing.
+    void NativeClockUpdate() {}
+
     bool NativeDiskRead(uint16_t unit, uint16_t block, uint16_t len, std::vector<uint8_t>& out) {
         // Any Big Disk unit, exactly as the port-207 READ does (unit -> drive,
         // block * 512); no image or past its end -> false (Z80 READSEG runs).

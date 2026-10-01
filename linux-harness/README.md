@@ -226,12 +226,15 @@ were traced back to `ECHO`/`CBOS`/`CHCLR`/`DSK0` in the first place.
 
 ## Keeping in sync
 
-`NativeCalli.inc` (CSP 138, CALLI, version 1.91) is **not** mirrored here: it has
-no pure-Z80 counterpart to trace-diff against (the Z80 interpreter has no such
-CSP). It reuses `NativeCxp.inc` and `NativeBldmscwProc`, which *are* mirrored, and
-the trace-diff checks that the shared code still behaves as before. CALLI itself is
-tested by Tiny-C's `tests/funcptr.c` and `tests/funcseg.c`
-(https://github.com/Bio-Printer/UCSD-C).
+`NativeCalli.inc` (CSP 138, CALLI, version 1.91) and `NativeDouble.inc` (the
+8-byte double CSPs 100..137) are copied here so that every shared file is
+identical (`validation/run_all.sh` checks that first), but no harness program
+includes them: neither has a pure-Z80 counterpart to trace-diff against (the Z80
+interpreter has no such CSPs). CALLI reuses `NativeCxp.inc` and
+`NativeBldmscwProc`, which *are* used here, and the trace-diff checks that the
+shared code still behaves as before. CALLI itself is tested by Tiny-C's
+`tests/funcptr.c` and `tests/funcseg.c`, the doubles by `tests/doubles.c` and
+`tools/f12test.py` (https://github.com/Bio-Printer/UCSD-C).
 
 `z80.h`/`z80.cpp` here are byte-for-byte copies of `UCSDPascal/z80.h`/
 `z80.cpp`. That file changes rarely; if it ever does change in the real
