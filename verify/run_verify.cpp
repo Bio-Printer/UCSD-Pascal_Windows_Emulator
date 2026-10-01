@@ -48,6 +48,7 @@ int main(int argc, char** argv) {
     bool native = std::string(argv[5]) == "native";
     e.SetNativePcodeOps(native);
     e.SetPreserveZ80RegisterCompat(getenv("VERIFY_COMPAT") != nullptr);
+    if (getenv("VERIFY_NOCOPROC")) e.SetZ80Coprocessor(false);   // Z80 mode without the coprocessor (the original interpreter alone)
     bool compare = trace.rfind("compare:", 0) == 0, record = trace.rfind("record:", 0) == 0;
     if (trace.rfind("text:", 0) == 0) { e.SetTraceAlsoZ80(true); if (!e.EnableTrace(W(trace.substr(5)), werr)) return 2; }
     if ((compare || record) && !e.StartVerifyLog(W(trace.substr(compare ? 8 : 7)), compare, werr)) { fprintf(stderr, "cannot open the verify log\n"); return 2; }
@@ -126,6 +127,7 @@ int main(int argc, char** argv) {
     for (unsigned char c : tr) { if (c == '\r') c = '\n'; if ((c >= 32 && c < 127) || c == '\n') fputc(c, tf); }
     fclose(tf);
     printf("P-code instructions %s: %llu\n", compare ? "compared" : (record ? "recorded" : "run"), (unsigned long long)e.VerifyRecordCount());
+    if (!native) printf("z80 coprocessor: %llu CSPs (doubles, CALLI, 4-byte real functions)\n", (unsigned long long)e.Z80CoprocessorCalls());
     if (harvard) printf("harvard layout: %s, %d segments on the code stack, %u bytes of I-space free\n",
                                          e.HarvardActive() ? "yes" : "NO", e.HarvardCodeSegments(), (unsigned)e.HarvardCodeFree());
     if (getenv("VERIFY_RECLAIM")) printf("interpreter memory reclaimed: %s%s%s\n", e.InterpreterMemoryReclaimed() ? "yes" : "NO",

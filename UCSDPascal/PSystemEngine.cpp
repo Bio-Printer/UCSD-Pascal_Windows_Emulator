@@ -1126,7 +1126,7 @@ uint16_t PSystemEngine::CodeFree(uint8_t seg) {
 
 // The LSA/LPA constants of a segment image (offset 0 = its lowest byte): every
 // P-code procedure is walked instruction by instruction from its entry to its
-// return (RNP/RBP/XIT), as tools/pcensus.py of Tiny-C (UCSD-C) does, with the
+// return (RNP/RBP/XIT), as tools/pcensus.py of Tiny-C (UCSD-TinyC) does, with the
 // operand formats of the UCSD utility volume's OPCODES.II.0 (the table DISASM
 // uses): 0 short, 1 one byte, 2 "big" (1 or 2 bytes), 3 two bytes, 4 byte +
 // big, 5 XJP (aligned min, max, else jump, table), 6 length + characters (LSA,
@@ -2470,6 +2470,27 @@ void PSystemEngine::RunLoop() {
         // precisely "let the real Z80 code run from here."
 #include "NativeErrors.inc"
         int nativeOpcodeLookup = m_nativePcodeOps ? NativeOpcodeForTarget(m_cpu.r.PC) : -1;
+        // Z80 mode's coprocessor (SetZ80Coprocessor): the Z80 interpreter's CSP
+        // routine (0x15B8: LD A,(BC); INC BC) indexes its 41-entry CSPTBL with no
+        // range check, so CSP 100..138 -- the 8-byte doubles and CALLI -- would jump
+        // through whatever follows the table; and this build leaves SIN, COS, LOG,
+        // ATAN, LN, EXP, SQT (CSP 25..31) unimplemented (NOFPT: JP NOTIMP).
+        // Exactly those go to the native CSP code below (25..31 only while the
+        // table sends them to NOTIMP or nowhere), as a coprocessor board would take them;
+        // every other P-code (other CSPs included) stays Z80 code. A 25..31 domain
+        // error falls through to the Z80 code (NOTIMP), as in P-Code mode.
+        if (nativeOpcodeLookup < 0 && m_z80Coproc && !m_nativePcodeOps && m_cpu.r.PC == 0x15B8 &&
+            m_mem[0x15B8] == 0x0A && m_mem[0x15B9] == 0x03) {
+            const uint8_t cpNum = m_mem[m_cpu.r.BC()];
+            const uint16_t cpEntry = (uint16_t)(0x15E7 + cpNum * 2);   // CSPTBL[cpNum]
+            const uint16_t cpTo = (uint16_t)(m_mem[cpEntry] | (m_mem[(uint16_t)(cpEntry + 1)] << 8));
+            const bool cpNotImp = cpTo == 0 ||                          // empty, or NOFPT's "JP NOTIMP"
+                (m_mem[cpTo] == 0xC3 && m_mem[(uint16_t)(cpTo + 1)] == 0x12 && m_mem[(uint16_t)(cpTo + 2)] == 0x04);
+            if ((cpNum >= 100 && cpNum <= 138) || (cpNum >= 25 && cpNum <= 31 && cpNotImp)) {
+                nativeOpcodeLookup = OP_CSP;                              // the coprocessor
+                m_z80CoprocCount++;
+            }
+        }
         const uint16_t nativeEntryPc = m_cpu.r.PC;   // to recognise a native hand-over to another native entry
         // "commit" collapses the many identical "m_cpu.r.PC = 0x03B0;"
         // lines that used to end most cases below into this one, shared

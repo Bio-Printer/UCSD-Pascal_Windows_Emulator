@@ -1,6 +1,7 @@
 // NativeDouble.inc -- 8-byte floating point ("double") as standard
-// procedures CSP 100..137. Native P-Code mode only: the Z80 interpreter has
-// no such routines (its CSPTBL has 41 entries).
+// procedures CSP 100..137. The Z80 interpreter has no such routines (its
+// CSPTBL has 41 entries); in Z80 mode the engine's coprocessor runs this same
+// code for them (PSystemEngine::SetZ80Coprocessor, version 1.93).
 // Included in PSystemEngine.cpp's CSP case, before the 25..31 block.
 //
 // FORMAT: IEEE-754 binary64, 8 bytes = 4 words, little-endian, lowest
