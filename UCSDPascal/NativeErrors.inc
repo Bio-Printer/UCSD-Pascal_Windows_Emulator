@@ -8,7 +8,8 @@
 //   EXECERROR's MSCW will be); BOMIPC := IPCSAV; IPC := the "CXP 0,2"
 //   instruction; BACK -- the native CXP then calls PROCEDURE EXECERROR.
 // Only with register compatibility off (host: PM_NATIVE_ERRORS). Host also
-// provides PM_CXP02 (address of the CXP 0,2 bytes) and PM_INTEND.
+// provides PM_CXP02 (address of the CXP 0,2 bytes) and PM_INTEND, and
+// PM_HARVARD / PM_ERR_ARM (Harvard layout: see PSystemEngine::SetHarvard).
 if (PM_NATIVE_ERRORS) {
     const int neCode = NativeErrorCode(PM_CPU.r.PC);
     if (neCode >= 0) {
@@ -23,6 +24,7 @@ if (PM_NATIVE_ERRORS) {
         const uint16_t neBombp = (uint16_t)(PM_CPU.r.SP - 14);
         PM_MEM[PM_V(0x02EE)] = (uint8_t)neBombp; PM_MEM[PM_V(0x02EF)] = (uint8_t)(neBombp >> 8); // BOMBP
         PM_MEM[PM_V(0x02FA)] = PM_MEM[PM_V(0x0246)]; PM_MEM[PM_V(0x02FB)] = PM_MEM[PM_V(0x0247)];            // BOMIPC := IPCSAV
+        if (PM_HARVARD) PM_ERR_ARM;                               // EXECERROR's MSCW gets the location shadow (CXP)
         PM_CPU.r.setBC(PM_CXP02);
         PM_CPU.r.PC = 0x03B0;                                     // BACK: dispatches CXP 0,2
     }

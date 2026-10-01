@@ -22,6 +22,9 @@
 #define PM_CODE_PLACE(len, newseg, segbot) (false)
 #define PM_CODE_COMMIT(seg, segbot, top, dtop) ((void)0)
 #define PM_CODE_FREE(seg) ((uint16_t)0)
+#define PM_ERR_ARM ((void)0)
+#define PM_ERR_SHADOW(mscw) ((void)0)
+#define PM_CODE_UNIT 64
 #define PM_CONST_SCAN(p) ((void)0)
 #define PM_CONST_INSTALL(p) ((void)0)
 #define PM_IOCFG IoConfig()   // unit-I/O configuration (PCodeOpcodes.h)

@@ -285,6 +285,11 @@ if (!PM_PRESERVE) {
             csWr(PM_V(0x02DC), 0x03A4);                                             // URTN := BACK1
             if (procNum != 38) { csWr(PM_V(0x02DA), asyW); csWr(PM_V(0x02D8), blkW); csWr(PM_V(0x02D6), lenW); csWr(PM_V(0x02D4), buf); }
             PM_MEM[PM_V(0x02E4)] = 0;                                               // GETU: IORSLT := 0 (low byte)
+            if (PM_HARVARD && unit == PM_CODE_UNIT) {                               // Harvard: I-space as data (SetHarvard)
+                if (procNum == 5) for (uint16_t i = 0; i < lenW; i++) PM_MEM[(uint16_t)(buf + i)] = PM_CODE8((uint16_t)(blkW + i));
+                if (procNum == 6) for (uint16_t i = 0; i < lenW; i++) PM_CODEW8((uint16_t)(blkW + i), PM_MEM[(uint16_t)(buf + i)]);
+                cspDone = true; break;                                              // IORSLT 0; UNITCLEAR: nothing to do
+            }
             if (badUnit) { PM_MEM[PM_V(0x02E4)] = 2; cspDone = true; break; }       // BLUN
             PM_MEM[PM_V(0x02D3)] = unit;                                            // UNIT
             csWr(PM_V(0x02D0), upt);                                                // UPTR

@@ -145,6 +145,7 @@ do {
     }
   CXP_POST:
     {
+    if (PM_HARVARD && segNum == 0 && cxProcN == 2) PM_ERR_SHADOW(cxNewMP);   // EXECERROR: location shadow (SetHarvard)
 
     uint16_t cxEntry = PM_CPU.r.BC();
     uint8_t  cxLex   = PM_CODE8((uint16_t)(cxRd(PM_V(0x02F4)) + 1));

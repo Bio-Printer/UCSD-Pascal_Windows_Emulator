@@ -37,6 +37,9 @@
 #define PM_CONST_SCAN(p) do { ScanSegConsts((p).image.data(), (p).len, (p).cKey, (p).cSrc, (p).cCnt, m_constUnwalked); \
                               (p).poolLen = 0; for (uint16_t n_ : (p).cCnt) (p).poolLen = (uint16_t)((p).poolLen + ((n_ + 1) & ~1)); } while (0)
 #define PM_CONST_INSTALL(p) ConstPoolInstall((p).segbot, (p).cKey, (p).cSrc, (p).cCnt, (p).dBot)
+#define PM_ERR_ARM (m_errShadowPending = true)
+#define PM_ERR_SHADOW(mscw) HarvardErrShadow(mscw)
+#define PM_CODE_UNIT kCodeUnit
 #define PM_IOCFG IoConfig()   // unit-I/O configuration (PCodeOpcodes.h)
 // run-time errors (NativeErrors.inc)
 #define PM_NATIVE_ERRORS (m_nativePcodeOps && !m_preserveZ80RegisterCompat)
@@ -820,6 +823,8 @@ bool PSystemEngine::NativeBoot(std::string& why, bool reclaimLayout) {
             m_codeSegs.clear();
             m_constAddr.assign(65536, 0);
             m_constUnwalked = 0;
+            for (ErrShadow& e : m_errShadow) e.mscw = 0;
+            m_errShadowPending = false; m_errShadowLive = false;
             memcpy(m_codeMem + kCodeCxp02, kPmCxp02, sizeof kPmCxp02);   // XEQERR's IPC (m_cxp02 = 0x0040)
             m_codeMem[kCodeAbort] = 0xD6;            // ABORT: the operating system's return point (below)
         }
@@ -1026,6 +1031,64 @@ void PSystemEngine::HarvardConstFault(uint16_t lenAt) {
              "-- its procedure could not be walked (%d such procedures so far).",
              lenAt, (unsigned)(m_mem[PM_V(0x02F6)] | (m_mem[PM_V(0x02F7)] << 8)), m_constUnwalked);
     m_reclaimFault = b;
+}
+
+// ---- EXECERROR's view of the failing location (see SetHarvard) ----
+// PRINTLOCS (SYSTEM.A) prints S# = MSSEG^.BYTE[0], P# = MSJTAB^.BYTE[0] and
+// I# = MSIPC - (ORD(MSJTAB) - 2 - MSJTAB^.WORD[-1]) from EXECERROR's MSCW,
+// reading code as data. Called by CXP once EXECERROR's MSCW is built (after
+// a run-time error, NativeErrors.inc): point its msjtab and msseg at a copy
+// of the attributes, written at the same address in D-space and I-space:
+//   Y-8 datasz, Y-6 parmsz, Y-4 exit and Y-2 entry (self-relative, so
+//   recomputed for Y), Y proc#, Y+1 lex; S = Y+2 the segment number.
+// PRINTLOCS then prints the true location, and the engine's own readers of
+// that MSCW during EXECERROR (EXIT's walk, CIP's lex search) see the same
+// values in I-space. HarvardErrRestore puts the real pointers back.
+void PSystemEngine::HarvardErrShadow(uint16_t mscw) {
+    if (!m_errShadowPending) return;
+    m_errShadowPending = false;
+    auto rdD = [&](uint16_t a) { return (uint16_t)(m_mem[a] | (m_mem[(uint16_t)(a + 1)] << 8)); };
+    if (mscw != rdD(PM_V(0x02EE))) return;                 // not the MSCW XEQERR announced as BOMBP
+    for (ErrShadow& e : m_errShadow) if (e.mscw != 0 && e.mscw <= mscw) e.mscw = 0;   // frames gone (the stack grows down)
+    int slot = -1;
+    for (int i = 0; i < 4; i++) if (m_errShadow[i].mscw == 0) { slot = i; break; }
+    if (slot < 0) return;                                  // 4 nested errors: PRINTLOCS prints what it finds
+    const uint16_t jt = rdD((uint16_t)(mscw + 4)), sg = rdD((uint16_t)(mscw + 6));
+    const uint16_t b = (uint16_t)(kErrShadowBase + slot * kErrShadowSize), y = (uint16_t)(b + 8), sAt = (uint16_t)(b + 10);
+    auto put = [&](uint16_t a, uint8_t v) { m_mem[a] = v; m_codeMem[a] = v; };
+    auto put16 = [&](uint16_t a, uint16_t v) { put(a, (uint8_t)v); put((uint16_t)(a + 1), (uint8_t)(v >> 8)); };
+    const uint16_t exitAt = (uint16_t)((uint16_t)(jt - 4) - PM_CODE16((uint16_t)(jt - 4)));
+    const uint16_t entryAt = (uint16_t)((uint16_t)(jt - 2) - PM_CODE16((uint16_t)(jt - 2)));
+    put16((uint16_t)(y - 8), PM_CODE16((uint16_t)(jt - 8)));
+    put16((uint16_t)(y - 6), PM_CODE16((uint16_t)(jt - 6)));
+    put16((uint16_t)(y - 4), (uint16_t)((uint16_t)(y - 4) - exitAt));
+    put16((uint16_t)(y - 2), (uint16_t)((uint16_t)(y - 2) - entryAt));
+    put(y, PM_CODE8(jt)); put((uint16_t)(y + 1), PM_CODE8((uint16_t)(jt + 1)));
+    put(sAt, PM_CODE8(sg)); put((uint16_t)(sAt + 1), 0);
+    m_mem[(uint16_t)(mscw + 4)] = (uint8_t)y;   m_mem[(uint16_t)(mscw + 5)] = (uint8_t)(y >> 8);
+    m_mem[(uint16_t)(mscw + 6)] = (uint8_t)sAt; m_mem[(uint16_t)(mscw + 7)] = (uint8_t)(sAt >> 8);
+    m_errShadow[slot] = { mscw, jt, sg };
+    m_errShadowLive = true;
+}
+
+// RNP/RBP through the MSCW at mp: if it is a shadowed EXECERROR frame, put
+// the real msjtab / msseg back first (only if they still hold the shadow's
+// addresses -- the program may have written its own).
+void PSystemEngine::HarvardErrRestore(uint16_t mp) {
+    for (int i = 0; i < 4; i++) {
+        ErrShadow& e = m_errShadow[i];
+        if (e.mscw != mp) continue;
+        const uint16_t b = (uint16_t)(kErrShadowBase + i * kErrShadowSize), y = (uint16_t)(b + 8), sAt = (uint16_t)(b + 10);
+        if ((uint16_t)(m_mem[(uint16_t)(mp + 4)] | (m_mem[(uint16_t)(mp + 5)] << 8)) == y) {
+            m_mem[(uint16_t)(mp + 4)] = (uint8_t)e.jtab; m_mem[(uint16_t)(mp + 5)] = (uint8_t)(e.jtab >> 8);
+        }
+        if ((uint16_t)(m_mem[(uint16_t)(mp + 6)] | (m_mem[(uint16_t)(mp + 7)] << 8)) == sAt) {
+            m_mem[(uint16_t)(mp + 6)] = (uint8_t)e.seg; m_mem[(uint16_t)(mp + 7)] = (uint8_t)(e.seg >> 8);
+        }
+        e.mscw = 0;
+    }
+    m_errShadowLive = false;
+    for (const ErrShadow& e : m_errShadow) if (e.mscw != 0) m_errShadowLive = true;
 }
 
 // ---- The Harvard layout's code stack (see SetHarvard) ----
@@ -2007,6 +2070,8 @@ void PSystemEngine::RunLoop() {
             m_cpu.r.PC = 0xF000; m_cpu.r.SP = sp0;
             m_rom.clear(); m_reclaimed = false; m_cxp02 = 0x03D7;
             m_harvard = false; m_codeMem = m_mem; m_code.clear(); m_codeSegs.clear(); m_codeTop = 0; m_constAddr.clear();
+            for (ErrShadow& e : m_errShadow) e.mscw = 0;
+            m_errShadowPending = false; m_errShadowLive = false;
             m_varDelta = 0; m_builtInTables = false; m_ioReady = false; m_heapStart = 0x03A4;
         }
     }
@@ -2993,6 +3058,7 @@ void PSystemEngine::RunLoop() {
                 uint16_t newSP = (bytesToReturn == 0) ? oldSP : destStart;
 
                 uint16_t framePtr = mpVal; // (MP)
+                if (m_errShadowLive) HarvardErrRestore(framePtr);   // EXECERROR's frame: the real msjtab / msseg back
                 framePtr = (uint16_t)(framePtr + 2);
                 uint16_t newMP = (uint16_t)(m_mem[framePtr] | (m_mem[(uint16_t)(framePtr + 1)] << 8));
                 framePtr = (uint16_t)(framePtr + 2);
@@ -4580,6 +4646,7 @@ void PSystemEngine::RunLoop() {
                 uint16_t newSP = (bytesToReturn == 0) ? oldSP : destStart;
 
                 uint16_t framePtr = (uint16_t)(m_mem[PM_V(0x02F2)] | (m_mem[PM_V(0x02F3)] << 8)); // MP
+                if (m_errShadowLive) HarvardErrRestore(framePtr);   // EXECERROR's frame: the real msjtab / msseg back
                 framePtr = (uint16_t)(framePtr + 2); // skip junked static link
                 uint16_t newMP = (uint16_t)(m_mem[framePtr] | (m_mem[(uint16_t)(framePtr + 1)] << 8)); // dynamic link
                 framePtr = (uint16_t)(framePtr + 2);

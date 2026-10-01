@@ -184,6 +184,21 @@ public:
     //    address (m_constAddr, indexed by the instruction's I-space address).
     //  * Assembly-language procedures cannot run (there is no Z80 code to
     //    run them anyway once memory is reclaimed).
+    //  * Run-time errors: EXECERROR's PRINTLOCS reads the failing location
+    //    (S#, P#, I#) through the msseg / msjtab pointers of its MSCW as data.
+    //    When EXECERROR is called, the engine points those two fields at a
+    //    small shadow of the segment and procedure attributes, written at the
+    //    same address in both spaces (0x0048-0x0077, unused by both), so
+    //    PRINTLOCS (D-space) and the engine (I-space: EXIT, CIP) read the
+    //    same, correct values. The real pointers are put back when that
+    //    MSCW is returned through (RNP/RBP), before anything uses them.
+    //  * Unit 64 (kCodeUnit) reads and writes I-space as data: UNITREAD /
+    //    UNITWRITE(64, buffer, count, address) copy count bytes between the
+    //    buffer and I-space starting at address (the "block" argument);
+    //    UNITCLEAR(64) does nothing. IORESULT is 0. Without the Harvard
+    //    layout unit 64 is an ordinary bad unit (IORESULT 2), so a program
+    //    can tell the two apart. A write to code changes only the code: the
+    //    D-space copies of its string constants (see above) stay as loaded.
     // HarvardActive() says whether it took effect; HarvardCodeSegments() and
     // HarvardCodeFree() are test aids (segments on the code stack, free
     // I-space bytes).
@@ -423,6 +438,16 @@ private:
     void HarvardConstFault(uint16_t lenAt);
     uint16_t HarvardSelfPatchTarget(uint16_t a) const;    // Tiny-C /Z call sequence: the CXP operand its STO writes
     uint16_t m_codeStoreAt = 0;                           // that address while the sequence runs (0: none)
+    // EXECERROR's location shadow (see SetHarvard): one 12-byte slot per
+    // EXECERROR frame in use (a run-time error inside EXECERROR nests).
+    struct ErrShadow { uint16_t mscw, jtab, seg; };      // mscw 0: slot free; jtab/seg: the real pointers
+    ErrShadow m_errShadow[4] = {};
+    bool m_errShadowPending = false;                      // a run-time error was raised; EXECERROR's CXP is next
+    bool m_errShadowLive = false;                         // some slot is in use (RNP/RBP test only this)
+    static constexpr uint16_t kErrShadowBase = 0x0048, kErrShadowSize = 12;
+    static constexpr uint8_t kCodeUnit = 64;
+    void HarvardErrShadow(uint16_t mscw);                 // EXECERROR's MSCW was built at mscw
+    void HarvardErrRestore(uint16_t mp);                  // returning through the MSCW at mp
     static bool ScanSegConsts(const uint8_t* seg, uint32_t len, std::vector<uint16_t>& key,
                               std::vector<uint16_t>& src, std::vector<uint16_t>& cnt, int& unwalked);
     void ConstPoolInstall(uint16_t segbot, const std::vector<uint16_t>& key, const std::vector<uint16_t>& src,
