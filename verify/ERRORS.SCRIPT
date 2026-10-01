@@ -27,6 +27,24 @@ TYPE "#9:BYTECMP\r"
 WAIT "BYTECMP: 7 of 7 comparisons true"
 WAIT "Command:"
 
+# STRCONST: string and packed-array constants (LSA, LPA -- inline in the code)
+# assigned, compared, passed, concatenated, in a segment procedure at every
+# level of a recursion, and kept in a variable across segment calls -- a
+# regression program for the Harvard layout, which copies them out of the
+# code (errtest/STRCONST.TEXT, compiled by the script). No error.
+TYPE "C"
+WAIT "Compile what text?"
+TYPE "#9:STRCONST\r"
+WAIT "To what codefile?"
+TYPE "#9:STRCONST\r"
+WAIT "Smallest available space"
+WAIT "Command:"
+TYPE "X"
+WAIT "Execute what file?"
+TYPE "#9:STRCONST\r"
+WAIT "STRCONST: 13 OF 13 CHECKS TRUE"
+WAIT "Command:"
+
 # DEEPCXP: a call into another segment (CXP) from more than 64 frames deep --
 # the native CXP's static-link search gave up after 64 frames (errtest/DEEPCXP.README.md).
 TYPE "X"

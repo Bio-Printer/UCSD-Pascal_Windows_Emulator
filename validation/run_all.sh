@@ -163,7 +163,9 @@ ncmp=$(grep -c "REALCMP: 7 of 7 comparisons true\|BYTECMP: 7 of 7 comparisons tr
 echo "     REAL / PACKED ARRAY OF CHAR comparison programs with memory reclaimed: $ncmp of 2 report 7 of 7"
 ndeep=$(grep -c "DEPTH 70: 1\|depth 70: ok\|DEEPCIP: 101" /tmp/vv_erec/transcript.txt)
 echo "     deep CXP / CIP programs (DEEPCXP, DEEPC, DEEPCIP) with memory reclaimed: $ndeep of 3 correct"
-if grep -q "VERIFY SCRIPT COMPLETED" /tmp/vv_enat.out && ! grep -q MISMATCH /tmp/vv_enat.out && grep -q "VERIFY SCRIPT COMPLETED" /tmp/vv_erec.out && [ "$nrep" -eq 17 ] && [ "$ncmp" -eq 2 ] && [ "$ndeep" -eq 3 ]; then
+nstr=$(grep -c "STRCONST: 13 OF 13 CHECKS TRUE" /tmp/vv_erec/transcript.txt)
+echo "     string / packed-array constants (STRCONST) with memory reclaimed: $nstr of 1 report 13 of 13"
+if grep -q "VERIFY SCRIPT COMPLETED" /tmp/vv_enat.out && ! grep -q MISMATCH /tmp/vv_enat.out && grep -q "VERIFY SCRIPT COMPLETED" /tmp/vv_erec.out && [ "$nrep" -eq 17 ] && [ "$ncmp" -eq 2 ] && [ "$ndeep" -eq 3 ] && [ "$nstr" -eq 1 ]; then
     echo "PASS"
 else
     echo "FAIL: run-time error handling"; head -12 /tmp/vv_enat.out; FAIL=1

@@ -1,0 +1,53 @@
+PROGRAM STRCONST;
+(* String and packed-array constants, which live in the code (LSA, LPA):
+   assigned, compared, passed, concatenated, used in a segment procedure
+   (loaded when called) at every level of a recursion, and a value kept in
+   a variable across segment calls. A regression program for the
+   emulator's Harvard layout, which copies them out of the code. *)
+CONST HELLO = 'HELLO';
+TYPE P8 = PACKED ARRAY [1..8] OF CHAR;
+VAR S, T, U: STRING; A, B: P8; OK, N: INTEGER;
+
+SEGMENT PROCEDURE SEGP(D: INTEGER);
+VAR L: STRING; C: P8;
+BEGIN
+  L := 'IN SEGMENT';
+  C := 'SEGMENT!';
+  IF (L = 'IN SEGMENT') AND (C = 'SEGMENT!') THEN OK := OK + 1;
+  U := CONCAT(U, 'S');
+  IF D > 0 THEN SEGP(D - 1)
+END;
+
+PROCEDURE CHECK(B: BOOLEAN);
+BEGIN
+  N := N + 1;
+  IF B THEN OK := OK + 1
+END;
+
+FUNCTION SAME(X: STRING): BOOLEAN;
+BEGIN
+  SAME := X = 'PARAM'
+END;
+
+BEGIN
+  OK := 0; N := 0; U := '';
+  S := 'ABC'; T := S;
+  CHECK((S = 'ABC') AND (T = S) AND (LENGTH(S) = 3));
+  S := '';
+  CHECK(LENGTH(S) = 0);
+  A := 'ABCDEFGH'; B := A;
+  CHECK(A = B);
+  CHECK(A = 'ABCDEFGH');
+  CHECK(SAME('PARAM'));
+  S := CONCAT('AB', 'CD', HELLO);
+  CHECK(S = 'ABCDHELLO');
+  CHECK(POS('C', 'ABCD') = 3);
+  N := N + 3;                     (* SEGP(2): three levels, one check each *)
+  SEGP(2);
+  CHECK(U = 'SSS');
+  T := 'KEPT';
+  N := N + 1;                     (* SEGP(0): one level *)
+  SEGP(0);
+  CHECK(T = 'KEPT');
+  WRITELN('STRCONST: ', OK, ' OF ', N, ' CHECKS TRUE')
+END.
