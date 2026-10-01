@@ -1623,6 +1623,8 @@ uint8_t PSystemEngine::PortIn(uint8_t port) {
         }
         case 1: { // CONIN: block for a real keystroke.
             for (;;) {
+                // Paused (Options > Pause): a key typed meanwhile waits for Resume.
+                if (m_pauseRequested.load() && !PauseWait()) return 0x00;   // stopping
                 EnterCriticalSection(&m_keyLock);
                 if (!m_keyQueue.empty()) {
                     uint8_t v = m_keyQueue.front();
@@ -2050,6 +2052,17 @@ void PSystemEngine::PrinterWriteChar(uint8_t c) {
     m_printerFile.flush(); // low-volume output; flush every character for reliability
 }
 
+// Options > Pause: wait (without using the CPU) until Resume or Stop.
+bool PSystemEngine::PauseWait() {
+    m_pausedNow = true;
+    bool go = true;
+    while (m_pauseRequested.load()) {
+        if (WaitForSingleObject(m_stopEvent, 50) == WAIT_OBJECT_0) { go = false; break; }
+    }
+    m_pausedNow = false;
+    return go;
+}
+
 void PSystemEngine::RunLoop() {
     m_running = true;
     m_halted = false;
@@ -2090,7 +2103,10 @@ void PSystemEngine::RunLoop() {
     for (long i = 0; !m_cpu.r.halted; i++) {
         // Checked every 4096 iterations, not every instruction: on Windows each
         // check is a kernel call, which was a measurable per-instruction cost.
-        if ((i & 0xFFF) == 0 && WaitForSingleObject(m_stopEvent, 0) == WAIT_OBJECT_0) break;
+        if ((i & 0xFFF) == 0) {
+            if (WaitForSingleObject(m_stopEvent, 0) == WAIT_OBJECT_0) break;
+            if (m_pauseRequested.load(std::memory_order_relaxed) && !PauseWait()) break;   // Options > Pause
+        }
 
         // This boot ROM contains a shared busy-wait subroutine at 0xF244
         // (DEC HL / OR L / JR NZ / DJNZ) used to simulate real disk

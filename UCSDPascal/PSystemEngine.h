@@ -80,6 +80,12 @@ public:
     void RunLoop();
     void Stop();
     bool IsRunning() const { return m_running; }
+    // Pause / resume the running P-System (Options > Pause). RunLoop checks
+    // the request where it checks for Stop (every 4096 steps) and then waits,
+    // still answering Stop, until Resume. IsPaused(): it is waiting now.
+    void SetPaused(bool pause) { m_pauseRequested = pause; }
+    bool PauseRequested() const { return m_pauseRequested; }
+    bool IsPaused() const { return m_pausedNow; }
 
     // Instruction tracing (same "PC=.... A=.. BC=.... ..." format used
     // throughout this project), off by default. Enabling opens/creates
@@ -408,6 +414,8 @@ private:
     CRITICAL_SECTION m_keyLock;
     HANDLE m_keyAvailable = nullptr;
     HANDLE m_stopEvent = nullptr;
+    std::atomic<bool> m_pauseRequested{ false }, m_pausedNow{ false };
+    bool PauseWait();                              // false: Stop arrived while paused
 
     volatile bool m_running = false;
     volatile bool m_waitingForKey = false;

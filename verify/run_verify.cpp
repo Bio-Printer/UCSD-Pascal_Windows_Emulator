@@ -40,6 +40,11 @@ int main(int argc, char** argv) {
     // time from outside the engine, as a git pull or a copy would
     const long touchStep = getenv("VERIFY_TOUCH") ? atol(getenv("VERIFY_TOUCH")) : -1;
     bool touched = false;
+    // VERIFY_PAUSE="step:ms": at script step n, pause the engine (Options >
+    // Pause) for ms milliseconds and report whether any P-code ran meanwhile
+    const long pauseStep = getenv("VERIFY_PAUSE") ? atol(getenv("VERIFY_PAUSE")) : -1;
+    bool pauseDone = false;
+    auto pcodeCount = [&]() { uint64_t n = 0; for (int op = 0; op < 256; op++) n += e.DebugOpcodeEmulatedCount((uint8_t)op); return n; };
     bool native = std::string(argv[5]) == "native";
     e.SetNativePcodeOps(native);
     e.SetPreserveZ80RegisterCompat(getenv("VERIFY_COMPAT") != nullptr);
@@ -68,6 +73,22 @@ int main(int argc, char** argv) {
             std::error_code ec;
             std::filesystem::last_write_time(p, std::filesystem::last_write_time(p, ec) + std::chrono::hours(1), ec);
             fprintf(stderr, "touched %s: %s\n", p.c_str(), ec ? "FAILED" : "OK");
+        }
+        if (pauseStep >= 0 && !pauseDone && r.StepIndex() >= (size_t)pauseStep) {
+            pauseDone = true;
+            std::string spec = getenv("VERIFY_PAUSE"); const long ms = atol(spec.substr(spec.find(':') + 1).c_str());
+            const uint64_t before = pcodeCount();
+            e.SetPaused(true);
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));       // reaches the next check (4096 steps) or a key wait
+            const uint64_t a = pcodeCount();
+            std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+            const uint64_t b = pcodeCount();
+            const bool waiting = e.IsPaused();
+            e.SetPaused(false);
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+            fprintf(stderr, "pause at step %ld: %llu P-code instructions before the pause took hold, %llu during %ld ms paused "
+                    "(engine waiting: %s), %llu in 200 ms after resume\n", pauseStep, (unsigned long long)(a - before),
+                    (unsigned long long)(b - a), ms, waiting ? "yes" : "no (blocked for a key)", (unsigned long long)(pcodeCount() - b));
         }
         if (r.StepIndex() != lastStep) {
             lastStep = r.StepIndex();
