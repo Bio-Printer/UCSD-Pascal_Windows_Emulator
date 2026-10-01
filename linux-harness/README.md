@@ -234,7 +234,7 @@ interpreter has no such CSPs). CALLI reuses `NativeCxp.inc` and
 `NativeBldmscwProc`, which *are* used here, and the trace-diff checks that the
 shared code still behaves as before. CALLI itself is tested by Tiny-C's
 `tests/funcptr.c` and `tests/funcseg.c`, the doubles by `tests/doubles.c` and
-`tools/f12test.py` (https://github.com/Bio-Printer/UCSD-C).
+`tools/f12test.py` (https://github.com/Bio-Printer/UCSD-TinyC).
 
 Version 1.92 (Harvard mode, see `PSystemEngine::SetHarvard`): the shared
 `.inc` files read and write code only through `PM_CODE8` / `PM_CODE16` /

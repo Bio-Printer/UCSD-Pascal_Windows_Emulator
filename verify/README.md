@@ -272,7 +272,7 @@ the suites; the engine stops with a message if it happens):
 
 ## Deep calls: the CXP / CIP static-link search (v1.84)
 
-Found by the Tiny-C compiler (UCSD-C project, repro/DEEPCXP). When a
+Found by the Tiny-C compiler (UCSD-TinyC project, repro/DEEPCXP). When a
 procedure at lex level >= 1 is called, CIPXNL searches the DYNAMIC chain for
 the first frame one lex level lower -- as many frames as the recursion is
 deep. The native CXP and CIP gave up after 64 frames and then jumped into the
@@ -281,7 +281,7 @@ target level), so the Z80 code looped forever -- and with memory reclaimed
 it is not there at all. A recursive-descent compiler calls into other
 segments much deeper than 64 frames.
 
-Fix (patch from the UCSD-C project, reviewed and applied): the search limit
+Fix (patch from the UCSD-TinyC project, reviewed and applied): the search limit
 is 30000 in NativeCxp.inc (CXP) and the native CIP (PSystemEngine.cpp and
 the linux-harness copies); a 64K stack holds fewer than 5,500 frames, so the
 search always completes natively, as the Z80 loop does. In addition the

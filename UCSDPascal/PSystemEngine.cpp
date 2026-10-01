@@ -1126,7 +1126,7 @@ uint16_t PSystemEngine::CodeFree(uint8_t seg) {
 
 // The LSA/LPA constants of a segment image (offset 0 = its lowest byte): every
 // P-code procedure is walked instruction by instruction from its entry to its
-// return (RNP/RBP/XIT), as tools/pcensus.py of Tiny-C (UCSD-C) does, with the
+// return (RNP/RBP/XIT), as tools/pcensus.py of Tiny-C (UCSD-TinyC) does, with the
 // operand formats of the UCSD utility volume's OPCODES.II.0 (the table DISASM
 // uses): 0 short, 1 one byte, 2 "big" (1 or 2 bytes), 3 two bytes, 4 byte +
 // big, 5 XJP (aligned min, max, else jump, table), 6 length + characters (LSA,
