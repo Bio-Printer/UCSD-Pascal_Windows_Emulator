@@ -3260,7 +3260,7 @@ void PSystemEngine::RunLoop() {
                 uint16_t bc = m_cpu.r.BC();
                 uint8_t segNum = PM_CODE8(bc); // peek
                 uint16_t segp = (uint16_t)(m_mem[PM_V(0x02F6)] | (m_mem[PM_V(0x02F7)] << 8));
-                uint8_t curSegByte = m_mem[segp]; // SEGP dereferenced as a pointer, one byte
+                uint8_t curSegByte = PM_CODE8(segp); // the current segment's number: first byte of its procedure dictionary
 
                 if (segNum != curSegByte) { // different segment: seg 0 / resident natively, disk read stays Z80
                     const uint8_t  cxProcN = PM_CODE8((uint16_t)(bc + 1));   // operands for NativeCxp.inc (shared with CSP 138)
