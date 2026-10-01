@@ -580,10 +580,29 @@ void CMainFrame::UpdateStatusBarText() {
         text = L"System halted.";
     } else if (m_engine->IsRunning()) {
         text = m_paused ? L"Paused -- Options > Resume to continue" : (m_traceEnabled ? L"Running (tracing to trace.txt)" : L"Running");
+        // The configuration actually running: execution mode, how it booted,
+        // the memory layout the engine is in (not just what the menu says),
+        // register compatibility and the clock. Settings that take effect at
+        // the next restart are named as such.
+        text += m_traceZ80Mode ? L" -- Z80 mode" : L" -- P-Code mode";
         if (m_engine->NativelyBooted())
-            text += m_engine->HarvardActive() ? L" -- native boot, Harvard mode (separate I & D space)" : L" -- native boot";
+            text += L", native boot";
         else if (!m_engine->NativeBootNote().empty())
-            text += CString(L" -- Z80 boot (native boot not possible: ") + CString(m_engine->NativeBootNote().c_str()) + L")";
+            text += CString(L", Z80 boot (native boot not possible: ") + CString(m_engine->NativeBootNote().c_str()) + L")";
+        else
+            text += L", Z80 boot";
+        const bool harvard = m_engine->HarvardActive();
+        text += harvard ? L", Harvard mode (separate I & D space)"
+                        : (m_engine->InterpreterMemoryReclaimed() ? L", memory reclaimed" : L", normal memory layout");
+        if (!m_traceZ80Mode)
+            text += m_preserveZ80RegisterCompat ? L", Z80 register compatibility on" : L", register compatibility off";
+        text += m_hostClock ? L", PC date and time" : L", boot disk date";
+        const bool harvardCanApply = !m_traceZ80Mode && !m_preserveZ80RegisterCompat && m_reclaimInterpMemory;
+        if (m_harvardMode && !harvard)
+            text += harvardCanApply ? L"  [Harvard Mode: takes effect when the P-System restarts]"
+                                    : L"  [Harvard Mode is checked but needs P-Code mode, register compatibility off and Reclaim on]";
+        else if (!m_harvardMode && harvard)
+            text += L"  [Harvard Mode off: takes effect when the P-System restarts]";
     } else {
         text = L"No system loaded -- use File > Open Big Disk...";
     }
