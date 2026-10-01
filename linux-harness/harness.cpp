@@ -18,6 +18,12 @@
 #define PM_CODE8(a) (mem[(uint16_t)(a)])   // code accesses (see PSystemEngine.cpp): one memory here
 #define PM_CODE16(a) ((uint16_t)(mem[(uint16_t)(a)] | (mem[(uint16_t)((a) + 1)] << 8)))
 #define PM_CODEW8(a, v) (mem[(uint16_t)(a)] = (uint8_t)(v))
+#define PM_HARVARD (false)   // no Harvard layout here (see PSystemEngine::SetHarvard)
+#define PM_CODE_PLACE(len, newseg, segbot) (false)
+#define PM_CODE_COMMIT(seg, segbot, top, dtop) ((void)0)
+#define PM_CODE_FREE(seg) ((uint16_t)0)
+#define PM_CONST_SCAN(p) ((void)0)
+#define PM_CONST_INSTALL(p) ((void)0)
 #define PM_IOCFG IoConfig()   // unit-I/O configuration (PCodeOpcodes.h)
 // run-time errors (NativeErrors.inc)
 #define PM_NATIVE_ERRORS (useNativeOps && !preserveZ80RegCompat)

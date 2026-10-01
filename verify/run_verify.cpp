@@ -48,6 +48,9 @@ int main(int argc, char** argv) {
     if ((compare || record) && !e.StartVerifyLog(W(trace.substr(compare ? 8 : 7)), compare, werr)) { fprintf(stderr, "cannot open the verify log\n"); return 2; }
     if (getenv("VERIFY_STOP_AT")) e.SetVerifyStopAt(strtoull(getenv("VERIFY_STOP_AT"), nullptr, 10));
     if (getenv("VERIFY_RECLAIM")) e.SetReclaimInterpreterMemory(true);
+    const char* hv = getenv("VERIFY_HARVARD");          // with VERIFY_RECLAIM, native mode: code in its own I-space
+    const bool harvard = hv && *hv && strcmp(hv, "0") != 0;   // (unset, empty or 0: off)
+    if (harvard) e.SetHarvard(true);
     e.SetConsoleCapture(true);
     VerifyRunner r(e, steps);
     std::thread t([&] { e.RunLoop(); });
@@ -102,6 +105,8 @@ int main(int argc, char** argv) {
     for (unsigned char c : tr) { if (c == '\r') c = '\n'; if ((c >= 32 && c < 127) || c == '\n') fputc(c, tf); }
     fclose(tf);
     printf("P-code instructions %s: %llu\n", compare ? "compared" : (record ? "recorded" : "run"), (unsigned long long)e.VerifyRecordCount());
+    if (harvard) printf("harvard layout: %s, %d segments on the code stack, %u bytes of I-space free\n",
+                                         e.HarvardActive() ? "yes" : "NO", e.HarvardCodeSegments(), (unsigned)e.HarvardCodeFree());
     if (getenv("VERIFY_RECLAIM")) printf("interpreter memory reclaimed: %s%s%s\n", e.InterpreterMemoryReclaimed() ? "yes" : "NO",
                                           e.ReclaimFault().empty() ? "" : " -- STOPPED: ", e.ReclaimFault().c_str());
     if (e.VerifyMismatch()) { printf("VERIFY MISMATCH after %.1f s:\n%s\n", el, e.VerifyMismatchText().c_str()); return 3; }

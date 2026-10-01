@@ -19,10 +19,25 @@
 // Not reproduced: the disk driver's own internals and the return addresses
 // / parameters SYSRD leaves in memory below SEGBOT (junk in the not-yet-
 // initialised local data area of the procedure about to be called).
+//
+// What goes on the P-machine stack: [dBot, dTop), with dTop the caller's SP
+// (spP), dBot the new SP. Normally that is the segment itself (dBot =
+// SEGBOT, dTop = NEWSEG + 2).
+// Harvard layout (host macro PM_HARVARD; the host also defines
+// PM_CODE_PLACE(len, newseg, segbot), PM_CODE_COMMIT(seg, segbot, top, dtop),
+// PM_CODE_FREE(seg), PM_CONST_SCAN(plan) and PM_CONST_INSTALL(plan) -- see
+// PSystemEngine::SetHarvard): the segment goes on the I-space code stack
+// (slLoad places it there, SL_NOROOM when I-space is full; NEWSEG and SEGBOT
+// are I-space addresses), and what goes on the P-machine stack is the
+// segment's constant pool (its LSA/LPA constants) -- so everything that uses
+// dBot/dTop works unchanged. slError leaves the stack unextended.
 struct SegLoadPlan {
     uint8_t  seg = 0;
     uint16_t segtp = 0, len = 0, unit = 0, block = 0, newseg = 0, segbot = 0, refLo = 0;
+    uint16_t dTop = 0, dBot = 0;                         // its stack copy in D-space (see above)
     std::vector<uint8_t> image;
+    std::vector<uint16_t> cKey, cSrc, cCnt;              // Harvard: the constant pool (PM_CONST_SCAN)
+    uint16_t poolLen = 0;
     bool inImage(uint16_t a, uint16_t n) const {
         uint16_t off = (uint16_t)(a - segbot);
         return (uint32_t)off + n <= len;
@@ -66,7 +81,7 @@ auto slProbe = [&](uint8_t seg, uint16_t spP, SegLoadPlan& p) -> bool {
 //   the block read holds another segment -> NOPROC (142A)
 // Anything unusual (a unit that is not a Big Disk unit, a segment too short
 // to check) is SL_DECLINE and stays with the Z80 code, as before.
-enum { SL_OK = 0, SL_NOSEG, SL_IOERR, SL_WRONGSEG, SL_DECLINE };
+enum { SL_OK = 0, SL_NOSEG, SL_IOERR, SL_WRONGSEG, SL_DECLINE, SL_NOROOM };
 auto slDiskUnit = [&](uint16_t unit) -> bool {       // GETU accepts it for input, and its driver is the Big Disk one
     const PmIoConfig& io = PM_IOCFG;
     const uint8_t u = (uint8_t)unit;
@@ -82,13 +97,26 @@ auto slLoad = [&](uint8_t seg, uint16_t spP, SegLoadPlan& p) -> int {
     if (p.len == 0) return SL_NOSEG;
     p.unit  = slRd((uint16_t)(p.segtp - 4));
     p.block = slRd((uint16_t)(p.segtp - 2));
-    p.newseg = (uint16_t)(spP - 2);
-    uint16_t h = (uint16_t)(p.newseg - p.len);
-    h = slIncL(h); h = (uint16_t)(h + 1);
-    p.segbot = h;
+    if (PM_HARVARD) {                                // on the I-space code stack
+        if (!PM_CODE_PLACE(p.len, p.newseg, p.segbot)) return SL_NOROOM;
+    } else {
+        p.newseg = (uint16_t)(spP - 2);
+        uint16_t h = (uint16_t)(p.newseg - p.len);
+        h = slIncL(h); h = (uint16_t)(h + 1);
+        p.segbot = h;
+    }
     if (!p.inImage(p.newseg, 2)) return SL_DECLINE;
-    if (NativeDiskRead(p.unit, p.block, p.len, p.image) && p.image.size() == p.len)
-        return p.image[(uint16_t)(p.newseg - p.segbot)] == seg ? SL_OK : SL_WRONGSEG;
+    if (NativeDiskRead(p.unit, p.block, p.len, p.image) && p.image.size() == p.len) {
+        if (p.image[(uint16_t)(p.newseg - p.segbot)] != seg) return SL_WRONGSEG;
+        p.dTop = spP;
+        if (PM_HARVARD) {                            // the constant pool takes the segment's place on the stack
+            PM_CONST_SCAN(p);
+            p.dBot = (uint16_t)(spP - p.poolLen);
+        } else {
+            p.dBot = p.segbot;
+        }
+        return SL_OK;
+    }
     return slDiskUnit(p.unit) ? SL_IOERR : SL_DECLINE;
 };
 auto slError = [&](SegLoadPlan& p, int kind, uint16_t getsegRet) -> uint16_t {
@@ -103,7 +131,7 @@ auto slError = [&](SegLoadPlan& p, int kind, uint16_t getsegRet) -> uint16_t {
     }
     slWr(PM_V(0x02CA), p.newseg);            // NEWSEG
     slWr(PM_V(0x02BC), p.segbot);            // SEGBOT; stack extended by seg_len, return address re-pushed
-    PM_CPU.r.SP = (uint16_t)(p.segbot - 2);
+    PM_CPU.r.SP = (uint16_t)((PM_HARVARD ? slSpP : p.segbot) - 2);   // Harvard: the stack is not extended
     slWr(PM_CPU.r.SP, 0x14C0);
     PM_MEM[PM_V(0x02D2)] = 0x01;             // SYSRD / SYSIO: UREQ, URTN, UASY, UBLK, ULEN, UBUF
     slWr(PM_V(0x02DC), 0x141C); slWr(PM_V(0x02DA), 0); slWr(PM_V(0x02D8), p.block); slWr(PM_V(0x02D6), p.len); slWr(PM_V(0x02D4), p.segbot);
@@ -119,7 +147,8 @@ auto slError = [&](SegLoadPlan& p, int kind, uint16_t getsegRet) -> uint16_t {
         PM_MEM[PM_V(0x02E4)] = PortIn(0xCF);                // status -> IORSLT
         return 0x0408;                                // JP NZ,SYIOER
     }
-    for (uint16_t i = 0; i < p.len; i++) PM_CODEW8((uint16_t)(p.segbot + i), p.image[i]);   // read in
+    if (!PM_HARVARD)                                  // (Harvard: not on the code stack, so not read in)
+        for (uint16_t i = 0; i < p.len; i++) PM_CODEW8((uint16_t)(p.segbot + i), p.image[i]);   // read in
     return 0x03DF;                                    // wrong segment: JP NZ,NOPROC
 };
 
@@ -156,7 +185,11 @@ auto slCommit = [&](SegLoadPlan& p) {
     slWr(PM_V(0x02D4), p.segbot);            // UBUF := base + index(0)
     PM_MEM[PM_V(0x02D3)] = (uint8_t)p.unit;          // UNIT (GETU)
     slWr(PM_V(0x02D0), (uint16_t)(0x1AFB + 4 * (uint8_t)p.unit)); // UPTR := ^UNITBL[unit]
-    PM_CPU.r.SP = p.segbot;            // stack now extended by the segment
+    if (PM_HARVARD) {                  // code on the code stack, its constant pool on the P-machine stack
+        PM_CODE_COMMIT(p.seg, p.segbot, (uint16_t)(p.newseg + 2), p.dTop);
+        PM_CONST_INSTALL(p);
+    }
+    PM_CPU.r.SP = p.dBot;              // stack now extended by the segment (Harvard: by its constant pool)
 
     // GSGREAD: relocation base from the segment's procedure 1
     uint16_t a = (uint16_t)(p.newseg - 1);

@@ -54,6 +54,11 @@ do {
         SegLoadPlan cxPlan;
         const int cxSl = slLoad(segNum, PM_CPU.r.SP, cxPlan);
         if (cxSl == SL_DECLINE) { cxWhy = 3; break; }              // stays Z80
+        if (cxSl == SL_NOROOM) {                                   // Harvard: I-space full -> STKOVR
+            cxWr(PM_V(0x0246), cxIpc1);
+            PM_CPU.r.PC = 0x03E9;
+            break;
+        }
         if (cxSl != SL_OK) {                                       // segment load error (compat off only)
             if (PM_PRESERVE) { cxWhy = 3; break; }
             cxWr(PM_V(0x0246), cxIpc1);                                  // CXP $10: SAVIPC, then CALL GETSEG
@@ -68,7 +73,7 @@ do {
         if (cxPlan.image[(uint16_t)(cxJt - cxPlan.segbot)] == 0) { cxWhy = 2; break; } // assembly procedure: stays Z80
         uint16_t cxDs = cxPlan.img16((uint16_t)(cxJt - 8));
         uint16_t cxPs = cxPlan.img16((uint16_t)(cxJt - 6));
-        uint16_t cxSpF = (uint16_t)(cxPlan.segbot - cxDs - cxPs - 12);
+        uint16_t cxSpF = (uint16_t)(cxPlan.dBot - cxDs - cxPs - 12);       // dBot: SP after the load (see NativeSegLoad.inc)
         if ((uint16_t)(cxSpF - 62) < cxRd(PM_V(0x0240))) { cxWhy = 1; break; } // STKOVR: stays Z80
 
         // ---- commit ----
@@ -85,7 +90,7 @@ do {
         uint16_t datasz = PM_CODE16((uint16_t)(jtab - 8));
         uint16_t parmsz = PM_CODE16((uint16_t)(jtab - 6));
         uint16_t sp = (uint16_t)(PM_CPU.r.SP - datasz - parmsz); // $50: extend by datasz+parmsz
-        uint16_t src = (uint16_t)(cxNewSeg + 2);                  // params sit just above the segment
+        uint16_t src = cxPlan.dTop;                               // params sit just above the segment (Harvard: its pool)
         for (uint16_t i = 0; i < parmsz; i++) PM_MEM[(uint16_t)(sp + i)] = PM_MEM[(uint16_t)(src + i)];
         PM_CPU.r.SP = sp;
         PushStackWord((uint16_t)(src + parmsz));                  // mssp

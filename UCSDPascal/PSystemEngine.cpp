@@ -21,9 +21,22 @@
 // through PM_CODE8/PM_CODE16 and every write of code through PM_CODEW8, so a
 // host can keep code in a memory of its own (the Harvard layout of P-Code
 // mode); a host with one memory maps them onto it.
-#define PM_CODE8(a) (m_mem[(uint16_t)(a)])
-#define PM_CODE16(a) ((uint16_t)(m_mem[(uint16_t)(a)] | (m_mem[(uint16_t)((a) + 1)] << 8)))
-#define PM_CODEW8(a, v) (m_mem[(uint16_t)(a)] = (uint8_t)(v))
+#define PM_CODE8(a) (m_codeMem[(uint16_t)(a)])
+#define PM_CODE16(a) ((uint16_t)(m_codeMem[(uint16_t)(a)] | (m_codeMem[(uint16_t)((a) + 1)] << 8)))
+#define PM_CODEW8(a, v) (m_codeMem[(uint16_t)(a)] = (uint8_t)(v))
+// The Harvard layout's code stack (see PSystemEngine::SetHarvard), for the
+// shared segment loader and return code: whether it is on, where a segment of
+// len bytes goes, record it, free a segment (and everything loaded after it).
+#define PM_HARVARD m_harvard
+#define PM_CODE_PLACE(len, newseg, segbot) CodePlace((len), (newseg), (segbot))
+#define PM_CODE_COMMIT(seg, segbot, top, dtop) CodeCommit((seg), (segbot), (top), (dtop))
+#define PM_CODE_FREE(seg) CodeFree(seg)
+// The constant pool (see SetHarvard): find a loaded segment's LSA/LPA constants
+// and their pool size (into the SegLoadPlan), and install them once the code is
+// in I-space.
+#define PM_CONST_SCAN(p) do { ScanSegConsts((p).image.data(), (p).len, (p).cKey, (p).cSrc, (p).cCnt, m_constUnwalked); \
+                              (p).poolLen = 0; for (uint16_t n_ : (p).cCnt) (p).poolLen = (uint16_t)((p).poolLen + ((n_ + 1) & ~1)); } while (0)
+#define PM_CONST_INSTALL(p) ConstPoolInstall((p).segbot, (p).cKey, (p).cSrc, (p).cCnt, (p).dBot)
 #define PM_IOCFG IoConfig()   // unit-I/O configuration (PCodeOpcodes.h)
 // run-time errors (NativeErrors.inc)
 #define PM_NATIVE_ERRORS (m_nativePcodeOps && !m_preserveZ80RegisterCompat)
@@ -800,6 +813,16 @@ bool PSystemEngine::NativeBoot(std::string& why, bool reclaimLayout) {
         m_cxp02 = 0x0040;
         m_heapStart = PM_V(0x03A4);                  // 0x0224
         m_reclaimed = true;
+        if (m_harvardRequested) {                    // code in an I-space of its own (SetHarvard)
+            m_harvard = true;
+            m_code.assign(65536, 0x00);
+            m_codeMem = m_code.data();
+            m_codeSegs.clear();
+            m_constAddr.assign(65536, 0);
+            m_constUnwalked = 0;
+            memcpy(m_codeMem + kCodeCxp02, kPmCxp02, sizeof kPmCxp02);   // XEQERR's IPC (m_cxp02 = 0x0040)
+            m_codeMem[kCodeAbort] = 0xD6;            // ABORT: the operating system's return point (below)
+        }
         say("\r\nNative boot, P-Code mode -- no Z80 interpreter, BIOS or loader in memory\r\n");
     }
     uint8_t* const ram = reclaimLayout ? m_rom.data() : m_mem;
@@ -870,6 +893,17 @@ bool PSystemEngine::NativeBoot(std::string& why, bool reclaimLayout) {
     const uint16_t seg0len = rd16(PM_V(0x0348));
     sp = (uint16_t)(memtop + 2 - seg0len);           // step 4: segment 0 at the top
     NativeBootSysrd((uint16_t)m_mem[PM_V(0x02E8)], sp, seg0len, rd16(PM_V(0x0346)), 0x1FA1, sp);
+    if (m_harvard) {                                 // segment 0 into I-space, at the same addresses;
+        const uint16_t seg0bot = (uint16_t)(memtop + 2 - seg0len);   // its constants at the top of D-space
+        memcpy(m_codeMem + seg0bot, m_mem + seg0bot, seg0len);
+        m_codeTop = seg0bot;
+        std::vector<uint16_t> key, src, cnt;
+        ScanSegConsts(m_codeMem + seg0bot, seg0len, key, src, cnt, m_constUnwalked);
+        uint16_t poolLen = 0;
+        for (uint16_t n : cnt) poolLen = (uint16_t)(poolLen + ((n + 1) & ~1));
+        sp = (uint16_t)(memtop + 2 - poolLen);       // the stack starts below the pool
+        ConstPoolInstall(seg0bot, key, src, cnt, sp);
+    }
     memset(m_mem + PM_V(0x0254), 0, 60);                   // INTSEGT[1..]: cleared
     wr16(PM_V(0x0250), 1); wr16(PM_V(0x0252), memtop);           // INTSEGT[0]: the operating system
     wr16(PM_V(0x02F6), memtop);                            // step 5: SEGP
@@ -883,7 +917,7 @@ bool PSystemEngine::NativeBoot(std::string& why, bool reclaimLayout) {
     auto push = [&](uint16_t v) { sp = (uint16_t)(sp - 2); wr16(sp, v); };
     push(PM_V(0x02E4));                                    // ^SYSCOM parameter
     push(frameSp);                                   // MSCW (dummy save state)...
-    push((uint16_t)(sp - 4));                        // ...MSIPC: address of an ABORT opcode
+    push(m_harvard ? kCodeAbort : (uint16_t)(sp - 4));   // ...MSIPC: address of an ABORT opcode (Harvard: in I-space)
     push(0x00D6); push(0x00D6);                      // the ABORT opcode
     const uint16_t mp = (uint16_t)(sp - 4);
     push(mp); push(mp);                              // STAT and DYN: self-referencing
@@ -960,6 +994,152 @@ void PSystemEngine::NativeClockUpdate() {
     const uint32_t t = m_clockTicks0 + (uint32_t)(ms * 60 / 1000);
     m_mem[PM_V(0x031A)] = (uint8_t)t;         m_mem[(uint16_t)(PM_V(0x031A) + 1)] = (uint8_t)(t >> 8);    // LOWTIME
     m_mem[PM_V(0x031C)] = (uint8_t)(t >> 16); m_mem[(uint16_t)(PM_V(0x031C) + 1)] = (uint8_t)(t >> 24);   // HIGHTIME
+}
+
+// Tiny-C's older call through a function pointer (its -z / /Z option, kept
+// because it also runs in Z80 mode) stores the function value into the
+// operands of the CXP that follows:
+//     LPA 0 ; SLDC n ; ADI ; SLDL t | LDL t ; STO ; CXP seg,proc
+// (LPA 0 pushes the address of the next instruction; + n is the CXP's seg
+// byte). In the Harvard layout that store must go to I-space. Given the
+// address after LPA 0's length byte, returns the CXP operand address the STO
+// will write when the code is exactly this sequence, else 0. (The same pattern
+// tools/pcensus.py --selfpatch of Tiny-C recognises.)
+uint16_t PSystemEngine::HarvardSelfPatchTarget(uint16_t a) const {
+    const uint8_t n = PM_CODE8(a);
+    if (n >= 0x80 || PM_CODE8((uint16_t)(a + 1)) != OP_ADI) return 0;     // SLDC n ; ADI
+    uint16_t p = (uint16_t)(a + 2);
+    const uint8_t ld = PM_CODE8(p);
+    if (ld >= OP_SLDL_BASE && ld < OP_SLDL_BASE + 16) p = (uint16_t)(p + 1);                    // SLDL t
+    else if (ld == OP_LDL) p = (uint16_t)(p + ((PM_CODE8((uint16_t)(p + 1)) & 0x80) ? 3 : 2));  // LDL t (big operand)
+    else return 0;
+    if (PM_CODE8(p) != OP_STO || PM_CODE8((uint16_t)(p + 1)) != OP_CXP) return 0;
+    const uint16_t target = (uint16_t)(a + n);
+    return target == (uint16_t)(p + 2) ? target : 0;                      // the CXP's seg,proc bytes
+}
+
+// An LSA/LPA whose constant has no D-space copy: the scan could not walk its
+// procedure. Stop, as a reclaim fault does, rather than push a wrong address.
+void PSystemEngine::HarvardConstFault(uint16_t lenAt) {
+    char b[200];
+    snprintf(b, sizeof b, "Harvard layout: the string constant at I-space %04X (segment at SEGP=%04X) has no D-space copy "
+             "-- its procedure could not be walked (%d such procedures so far).",
+             lenAt, (unsigned)(m_mem[PM_V(0x02F6)] | (m_mem[PM_V(0x02F7)] << 8)), m_constUnwalked);
+    m_reclaimFault = b;
+}
+
+// ---- The Harvard layout's code stack (see SetHarvard) ----
+// Segment lifetimes are nested (the normal layout keeps them on the P-machine
+// stack), so a stack growing down from below segment 0 is enough.
+bool PSystemEngine::CodePlace(uint16_t len, uint16_t& newseg, uint16_t& segbot) const {
+    if (len < 4 || (uint32_t)m_codeTop < (uint32_t)kCodeFloor + len) return false;
+    segbot = (uint16_t)(m_codeTop - len);
+    newseg = (uint16_t)(m_codeTop - 2);             // the dictionary's last word, as READSEG's NEWSEG
+    return true;
+}
+
+void PSystemEngine::CodeCommit(uint8_t seg, uint16_t segbot, uint16_t top, uint16_t dTop) {
+    m_codeSegs.push_back({ seg, segbot, top, dTop });
+    m_codeTop = segbot;
+}
+
+// The segment's reference count reached zero: its code goes, and with it any
+// segment loaded after it (in the normal layout those lie below it on the
+// stack, and SP := its top discards them too). Their constant-pool entries are
+// cleared, so a stale entry can never stand in for a missing one. Returns the
+// segment's pool top in D-space (what RELEASESEG sets SP to), 0 if not found.
+uint16_t PSystemEngine::CodeFree(uint8_t seg) {
+    for (size_t i = m_codeSegs.size(); i-- > 0; ) {
+        if (m_codeSegs[i].seg != seg) continue;
+        const uint16_t dTop = m_codeSegs[i].dTop;
+        for (size_t k = i; k < m_codeSegs.size(); k++)
+            for (uint32_t a = m_codeSegs[k].bot; a < m_codeSegs[k].top; a++) m_constAddr[a] = 0;
+        m_codeTop = m_codeSegs[i].top;
+        m_codeSegs.resize(i);
+        return dTop;
+    }
+    return 0;
+}
+
+// The LSA/LPA constants of a segment image (offset 0 = its lowest byte): every
+// P-code procedure is walked instruction by instruction from its entry to its
+// return (RNP/RBP/XIT), as tools/pcensus.py of Tiny-C (UCSD-C) does, with the
+// operand formats of the UCSD utility volume's OPCODES.II.0 (the table DISASM
+// uses): 0 short, 1 one byte, 2 "big" (1 or 2 bytes), 3 two bytes, 4 byte +
+// big, 5 XJP (aligned min, max, else jump, table), 6 length + characters (LSA,
+// LPA), 7 LDC (count, aligned words), 8 CSP (one byte), 9 compare (type byte,
+// types 10 and 12 add a big), A word. For each constant: key = offset of its
+// length byte (the IPC the instruction sees), src = first byte to copy (LSA:
+// the length byte too -- it pushes a string; LPA: only the characters), cnt.
+// A procedure that cannot be walked is counted in `unwalked`; executing one of
+// its constants then stops the engine instead of reading the wrong memory.
+bool PSystemEngine::ScanSegConsts(const uint8_t* seg, uint32_t len, std::vector<uint16_t>& key,
+                                  std::vector<uint16_t>& src, std::vector<uint16_t>& cnt, int& unwalked) {
+    static const char kTypes[] =
+    "0000000000000000000000000000000000000000000000000000000000000000"
+    "0000000000000000000000000000000000000000000000000000000000000000"
+    "0000000000000000000000000000048011222264221251199947994941001100"
+    "3110002A00202311640112000000000000000000000000000000000000000000";
+    key.clear(); src.clear(); cnt.clear();
+    if (len < 4) return true;
+    auto w16 = [&](uint32_t o) -> uint32_t { return o + 1 < len ? (uint32_t)(seg[o] | (seg[o + 1] << 8)) : 0x10000u; };
+    const uint32_t nprocs = seg[len - 1];
+    for (uint32_t i = 1; i <= nprocs; i++) {
+        if (len < 2 + 2 * i) { unwalked++; continue; }
+        const uint32_t p = len - 2 - 2 * i;
+        const uint32_t j = (uint32_t)(uint16_t)(p - w16(p));
+        if (j < 8 || j >= len - 1) { unwalked++; continue; }
+        if (seg[j] == 0) continue;                                   // assembly procedure
+        const uint32_t ent = (uint32_t)(uint16_t)((j - 2) - w16(j - 2));
+        const uint32_t limit = j - 8;
+        std::vector<uint16_t> k2, s2, c2;
+        bool ok = false;
+        for (uint32_t pos = ent, guard = 0; pos < limit && guard < 65536; guard++) {
+            const uint8_t op = seg[pos];
+            const char t = kTypes[op];
+            uint32_t q = pos + 1;
+            if (t == '1' || t == '8') q += 1;
+            else if (t == '2') q += (seg[q] & 0x80) ? 2 : 1;
+            else if (t == '3' || t == 'A') q += 2;
+            else if (t == '4') { q += 1; if (q >= limit) break; q += (seg[q] & 0x80) ? 2 : 1; }
+            else if (t == '9') { const uint8_t ty = seg[q]; q += 1; if (ty == 10 || ty == 12) { if (q >= limit) break; q += (seg[q] & 0x80) ? 2 : 1; } }
+            else if (t == '6') {
+                const uint8_t n = seg[q];
+                if (op == 166) { k2.push_back((uint16_t)q); s2.push_back((uint16_t)q); c2.push_back((uint16_t)(n + 1)); }        // LSA
+                else           { k2.push_back((uint16_t)q); s2.push_back((uint16_t)(q + 1)); c2.push_back(n); }               // LPA
+                q += 1 + n;
+            } else if (t == '7') { const uint8_t n = seg[q]; q += 1; q += q & 1; q += 2u * n; }
+            else if (t == '5') {
+                q += q & 1;
+                if (q + 4 > limit) break;
+                const int mn = (int16_t)w16(q), mx = (int16_t)w16(q + 2);
+                const int n = mx - mn + 1;
+                if (n < 0 || n > 4000) break;
+                q += 4 + 2 + 2 * (uint32_t)n;
+            }
+            if (q > limit) break;
+            if (op == 173 || op == 193 || op == 214) { ok = true; break; }   // RNP, RBP, XIT: the procedure's end
+            pos = q;
+        }
+        if (!ok) { unwalked++; continue; }
+        key.insert(key.end(), k2.begin(), k2.end());
+        src.insert(src.end(), s2.begin(), s2.end());
+        cnt.insert(cnt.end(), c2.begin(), c2.end());
+    }
+    return true;
+}
+
+// Copy a segment's constants from its code (already in I-space at segbot) to
+// its pool, which starts at dBot in D-space, each at an even address, and
+// record where each went.
+void PSystemEngine::ConstPoolInstall(uint16_t segbot, const std::vector<uint16_t>& key, const std::vector<uint16_t>& src,
+                                     const std::vector<uint16_t>& cnt, uint16_t dBot) {
+    uint16_t d = dBot;
+    for (size_t i = 0; i < key.size(); i++) {
+        for (uint16_t b = 0; b < cnt[i]; b++) m_mem[(uint16_t)(d + b)] = m_codeMem[(uint16_t)(segbot + src[i] + b)];
+        m_constAddr[(uint16_t)(segbot + key[i])] = d;
+        d = (uint16_t)(d + ((cnt[i] + 1) & ~1));
+    }
 }
 
 bool PSystemEngine::NativeDiskRead(uint16_t unit, uint16_t block, uint16_t len, std::vector<uint8_t>& out) {
@@ -1826,6 +2006,7 @@ void PSystemEngine::RunLoop() {
             memcpy(m_mem, before.data(), 65536);
             m_cpu.r.PC = 0xF000; m_cpu.r.SP = sp0;
             m_rom.clear(); m_reclaimed = false; m_cxp02 = 0x03D7;
+            m_harvard = false; m_codeMem = m_mem; m_code.clear(); m_codeSegs.clear(); m_codeTop = 0; m_constAddr.clear();
             m_varDelta = 0; m_builtInTables = false; m_ioReady = false; m_heapStart = 0x03A4;
         }
     }
@@ -2856,8 +3037,14 @@ void PSystemEngine::RunLoop() {
             case OP_STO: { // STO: Store indirect. Pop value, pop address, store.
                 uint16_t value = PopStackWord();
                 uint16_t addr = PopStackWord();
-                m_mem[addr] = value & 0xFF;
-                m_mem[(uint16_t)(addr + 1)] = value >> 8;
+                if (m_codeStoreAt != 0 && addr == m_codeStoreAt) {   // Harvard: Tiny-C /Z call sequence (see LPA)
+                    PM_CODEW8(addr, value & 0xFF);
+                    PM_CODEW8((uint16_t)(addr + 1), value >> 8);
+                    m_codeStoreAt = 0;
+                } else {
+                    m_mem[addr] = value & 0xFF;
+                    m_mem[(uint16_t)(addr + 1)] = value >> 8;
+                }
                 if (m_preserveZ80RegisterCompat) {
                     m_cpu.r.setDE(value); // real code never modifies DE after the pop, just reads E/D
                     m_cpu.r.setHL((uint16_t)(addr + 1)); // real code never touches A here
@@ -3389,8 +3576,18 @@ void PSystemEngine::RunLoop() {
                             // the entire array.
                 uint16_t bc = m_cpu.r.BC();
                 uint8_t length = PM_CODE8(bc);
+                const uint16_t lenAt = bc;
                 bc = (uint16_t)(bc + 1);
                 uint16_t dataAddr = bc; // address of the inline character data itself
+                if (m_harvard) {        // Harvard: its copy in the segment's constant pool (D-space)
+                    const uint16_t patchAt = length == 0 ? HarvardSelfPatchTarget(bc) : 0;
+                    if (patchAt != 0) {
+                        m_codeStoreAt = patchAt;   // the STO of this sequence writes the CXP's operands (I-space)
+                    } else {
+                        dataAddr = m_constAddr[lenAt];
+                        if (dataAddr == 0) { HarvardConstFault(lenAt); break; }
+                    }
+                }
                 PushStackWord(dataAddr);
                 bc = (uint16_t)(bc + length); // skip over the entire inline array
                 m_cpu.r.setBC(bc); // IPC advance -- functionally required, not a compat mirror
@@ -3415,7 +3612,12 @@ void PSystemEngine::RunLoop() {
                 uint16_t addR  = (uint16_t)strLen + cAfterInc;
                 bool    carry  = (addR >= 256);
                 if (m_preserveZ80RegisterCompat) m_cpu.r.A = (uint8_t)(bAfterInc + (carry ? 1 : 0)); // ADC A,B
-                PushStackWord(ipc);
+                uint16_t strAddr = ipc;
+                if (m_harvard) {        // Harvard: its copy in the segment's constant pool (D-space)
+                    strAddr = m_constAddr[ipc];
+                    if (strAddr == 0) { HarvardConstFault(ipc); break; }
+                }
+                PushStackWord(strAddr);
                 m_cpu.r.setBC((uint16_t)(ipc + 1 + strLen)); // skip len + chars -- IPC advance, not a compat mirror, stays unconditional
                 // HL is not touched by LSA's own code; leave it unchanged.
                 commit = true;
@@ -4799,6 +5001,7 @@ void PSystemEngine::RunLoop() {
             default: break;
         }
         if (commit) m_cpu.r.PC = 0x03B0;
+        if (!m_reclaimFault.empty()) break;            // HarvardConstFault: stop here
         // ---- SLDC, all 128 values (short load constant) ----
         // SLDC isn't table-dispatched like the opcodes above -- it's the
         // fallthrough path at BACK itself for any opcode byte with its
@@ -5030,7 +5233,7 @@ void PSystemEngine::RunLoop() {
             char b[200];
             snprintf(b, sizeof b, "Z80 code needed at PC=%04X after the interpreter memory was reclaimed "
                      "(P-code IPC=%04X, opcode %02X). Everything the validation suites exercise is native; this path is not.",
-                     m_cpu.r.PC, m_cpu.r.BC(), m_mem[m_cpu.r.BC()]);
+                     m_cpu.r.PC, m_cpu.r.BC(), PM_CODE8(m_cpu.r.BC()));
             m_reclaimFault = b;
             break;
         }

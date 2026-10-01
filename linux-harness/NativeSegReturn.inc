@@ -19,4 +19,5 @@ if (newSegCandidate != curSegP) {
     PM_MEM[drLo] = (uint8_t)(drCnt & 0xFF);
     PM_MEM[drHi] = (uint8_t)(drCnt >> 8);
     segRetA = (uint8_t)((drCnt & 0xFF) | (drCnt >> 8));
+    if (PM_HARVARD && drCnt == 0) PM_CODE_FREE(drSeg);   // Harvard: last user gone -- its code goes (SetHarvard)
 }

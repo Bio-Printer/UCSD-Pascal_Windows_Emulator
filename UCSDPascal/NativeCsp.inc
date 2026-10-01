@@ -167,6 +167,7 @@ if (!PM_PRESERVE) {
                 const int gs = slLoad(seg, (uint16_t)(PM_CPU.r.SP + 2), gp);
                 if (gs == SL_DECLINE) break;                 // stays Z80
                 PopStackWord();
+                if (gs == SL_NOROOM) { cspJump = 0x03E9; cspDone = true; break; }   // Harvard: I-space full -> STKOVR
                 if (gs != SL_OK) {                           // segment load error -> NOPROC / SYIOER
                     cspJump = slError(gp, gs, 0x1514);       // GSEG's CALL GETSEG return point
                     cspDone = true; break;
@@ -180,7 +181,10 @@ if (!PM_PRESERVE) {
             uint16_t hi = (uint16_t)(PM_V(0x0251) + 4 * (uint16_t)seg), lo = slDecL(hi);
             uint16_t n = (uint16_t)(((PM_MEM[hi] << 8) | PM_MEM[lo]) - 1);
             PM_MEM[lo] = (uint8_t)n; PM_MEM[hi] = (uint8_t)(n >> 8);
-            if (n == 0) {
+            if (n == 0 && PM_HARVARD) {                      // Harvard: the code goes; SP := its pool's top
+                const uint16_t t = PM_CODE_FREE(seg);
+                if (t != 0) PM_CPU.r.SP = t;
+            } else if (n == 0) {
                 uint16_t a = (uint16_t)(hi + 1);
                 uint8_t e = PM_MEM[a]; a = slIncL(a); uint8_t d = PM_MEM[a];
                 uint16_t h = slIncL((uint16_t)((d << 8) | e));

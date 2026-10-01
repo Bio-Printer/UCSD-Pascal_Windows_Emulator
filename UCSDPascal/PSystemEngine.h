@@ -158,6 +158,41 @@ public:
     void SetReclaimInterpreterMemory(bool on) { m_reclaimRequested = on; }
     bool InterpreterMemoryReclaimed() const { return m_reclaimed; }
 
+    // Harvard layout (P-Code mode; takes effect only with the native boot and
+    // the reclaimed-memory layout above, i.e. P-Code mode, register
+    // compatibility off, memory reclaimed). Code segments are kept in a 64K
+    // instruction space of their own (I-space) instead of on the P-machine
+    // stack, so they no longer take memory from the stack and heap (D-space):
+    //  * I-space: the "CXP 0,2" error stub at 0x0040 and an ABORT opcode at
+    //    0x0044; segment 0 (the operating system) at the top, ending at MEMTOP
+    //    as before; below it a code stack, growing down to 0x0100, holding
+    //    every other segment that is in memory.
+    //  * D-space: the P-machine stack starts at the top of memory; the heap
+    //    as before.
+    //  * MSCW msipc / msseg / msjtab, IPC, SEGP, JTAB and INTSEGT addresses
+    //    are I-space addresses. A segment's code is freed when its INTSEGT
+    //    reference count reaches zero (RNP/RBP, RELEASESEG), together with
+    //    any segment loaded after it -- what resetting SP over a segment
+    //    does in the normal layout.
+    //  * Inline string constants (LSA, LPA) are data the program reads through
+    //    the address the instruction pushes, so they are copied to D-space:
+    //    when a segment is loaded, its procedures are walked instruction by
+    //    instruction and every LSA/LPA constant goes into a constant pool on
+    //    the stack -- where the normal layout puts the whole segment, so the
+    //    pool lives and dies exactly as the segment's stack copy would.
+    //    Segment 0's pool is at the top of D-space. LSA/LPA push the copy's
+    //    address (m_constAddr, indexed by the instruction's I-space address).
+    //  * Assembly-language procedures cannot run (there is no Z80 code to
+    //    run them anyway once memory is reclaimed).
+    // HarvardActive() says whether it took effect; HarvardCodeSegments() and
+    // HarvardCodeFree() are test aids (segments on the code stack, free
+    // I-space bytes).
+    void SetHarvard(bool on) { m_harvardRequested = on; }
+    bool HarvardActive() const { return m_harvard; }
+    int HarvardCodeSegments() const { return (int)m_codeSegs.size(); }
+    uint16_t HarvardCodeFree() const { return m_harvard ? (uint16_t)(m_codeTop - kCodeFloor) : 0; }
+    int HarvardUnwalkedProcs() const { return m_constUnwalked; }
+
     // The P-System has halted: execution reached the ABORT opcode's routine
     // (a "JP ABORT" loop in the Z80 interpreter). The boot makes an ABORT the
     // return point of the operating system's main program, so this means the
@@ -369,6 +404,29 @@ private:
     FILE* m_verifyFile = nullptr;
     std::vector<uint8_t> m_rom;        // interpreter image snapshot once memory is reclaimed
     bool m_reclaimRequested = false, m_reclaimed = false;
+    // Harvard layout (see SetHarvard). m_codeMem is what PM_CODE8/16 and
+    // PM_CODEW8 use: m_mem normally, the I-space m_code when Harvard is on.
+    bool m_harvardRequested = false, m_harvard = false;
+    std::vector<uint8_t> m_code;
+    uint8_t* m_codeMem = m_mem;
+    struct CodeSeg { uint8_t seg; uint16_t bot, top, dTop; };   // [bot, top) in I-space; dTop: its pool's top in D-space
+    std::vector<CodeSeg> m_codeSegs;                      // the code stack, oldest first
+    uint16_t m_codeTop = 0;                               // first byte above the free I-space
+    static constexpr uint16_t kCodeFloor = 0x0100, kCodeCxp02 = 0x0040, kCodeAbort = 0x0044;
+    bool CodePlace(uint16_t len, uint16_t& newseg, uint16_t& segbot) const;  // where a segment of len bytes goes
+    void CodeCommit(uint8_t seg, uint16_t segbot, uint16_t top, uint16_t dTop);
+    uint16_t CodeFree(uint8_t seg);                       // returns the freed segment's pool top (0: not found)
+    // The constant pool: m_constAddr[a] is the D-space copy for the LSA/LPA
+    // whose length byte is at I-space address a (0: none).
+    std::vector<uint16_t> m_constAddr;
+    int m_constUnwalked = 0;                              // procedures the constant scan could not walk (test aid)
+    void HarvardConstFault(uint16_t lenAt);
+    uint16_t HarvardSelfPatchTarget(uint16_t a) const;    // Tiny-C /Z call sequence: the CXP operand its STO writes
+    uint16_t m_codeStoreAt = 0;                           // that address while the sequence runs (0: none)
+    static bool ScanSegConsts(const uint8_t* seg, uint32_t len, std::vector<uint16_t>& key,
+                              std::vector<uint16_t>& src, std::vector<uint16_t>& cnt, int& unwalked);
+    void ConstPoolInstall(uint16_t segbot, const std::vector<uint16_t>& key, const std::vector<uint16_t>& src,
+                          const std::vector<uint16_t>& cnt, uint16_t dBot);
     volatile bool m_systemHalted = false;
     bool m_hostClock = false;
     uint32_t m_clockTicks0 = 0;                    // HIGHTIME:LOWTIME when the P-System started
