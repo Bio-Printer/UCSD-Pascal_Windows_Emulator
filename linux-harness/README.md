@@ -227,7 +227,7 @@ were traced back to `ECHO`/`CBOS`/`CHCLR`/`DSK0` in the first place.
 ## Keeping in sync
 
 `NativeCalli.inc` (CSP 138, CALLI, version 1.91) and `NativeDouble.inc` (the
-8-byte double CSPs 100..137) are copied here so that every shared file is
+8-byte double CSPs 100..137; since 1.93 also Z80 mode's coprocessor) are copied here so that every shared file is
 identical (`validation/run_all.sh` checks that first), but no harness program
 includes them: neither has a pure-Z80 counterpart to trace-diff against (the Z80
 interpreter has no such CSPs). CALLI reuses `NativeCxp.inc` and

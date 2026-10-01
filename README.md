@@ -50,6 +50,22 @@ What it means for programs (details: `PSystemEngine::SetHarvard` in
   reference logs are unchanged); the Harvard layout is verified by
   `validation/run_all.sh` with `VERIFY_HARVARD=1`.
 
+## Z80 mode's coprocessor (version 1.93)
+
+The Z80 interpreter (SYSTEM.MICRO) has no 8-byte doubles (CSP 100..137), no
+CALLI (CSP 138), and this build has no SIN, COS, LOG, ATAN, LN, EXP, SQT for
+4-byte reals (CSP 25..31 go to `JP NOTIMP`). In Z80 mode the engine now does
+exactly those CSPs with the same native code as P-Code mode, as a math
+coprocessor board would: when the interpreter's CSP routine (0x15B8) is about
+to dispatch one of them, the engine runs it and returns to BACK1. Every other
+P-code, every other CSP included, is still the Z80 interpreter, and nothing on
+the disks changes. So Tiny-C programs with doubles, `float` functions or
+function pointers run in Z80 mode with bit-identical results, and Tiny-C's
+`-z` / `/Z` is no longer needed for Z80 mode (it still works). Programs that
+use none of these CSPs run exactly as before (the Verify reference logs are
+unchanged). `PSystemEngine::SetZ80Coprocessor(false)` (run_verify:
+`VERIFY_NOCOPROC=1`) turns it off. There is no menu item; it is always on.
+
 ## Pause / Resume
 
 Options > **Pause** (the first item) stops the P-System where it is; the item
@@ -87,6 +103,8 @@ memory), `VERIFY_UNIT10=path` (mount unit #10 in place),
 `VERIFY_IMPORT_STEP=n` at script step n, while the system runs),
 `VERIFY_TOUCH=n:path` (at step n, change the file's last-write time from
 outside, as a pull would -- tests the protection above),
+`VERIFY_NOCOPROC=1` (Z80 mode without the coprocessor; Z80 runs print a
+"z80 coprocessor:" line with the number of CSPs it did),
 `VERIFY_HARVARD=1` (with `VERIFY_RECLAIM=1`: Harvard mode; prints a
 "harvard layout:" line), `VERIFY_PAUSE=n:ms` (at step n, Pause for ms
 milliseconds, report how many P-code instructions ran meanwhile, Resume).

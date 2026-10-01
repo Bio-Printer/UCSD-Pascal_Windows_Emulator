@@ -132,6 +132,18 @@ public:
     // is active. Defaults to true. Takes effect on the next RunLoop call.
     void SetPreserveZ80RegisterCompat(bool preserve) { m_preserveZ80RegisterCompat = preserve; }
 
+    // Z80 mode's "coprocessor" (on by default): in Z80 mode the standard
+    // procedures the Z80 interpreter does not have -- CSP 100..137 (8-byte
+    // doubles, NativeDouble.inc) and CSP 138 (CALLI, NativeCalli.inc), and
+    // the 4-byte real SIN, COS, LOG, ATAN, LN, EXP, SQT (CSP 25..31) while
+    // the interpreter does not implement them (this build: JP NOTIMP) -- are
+    // done by the same native code as in P-Code mode, so programs that use
+    // them run in both modes with bit-identical results. Everything else in
+    // Z80 mode, every other CSP included, is still the Z80 interpreter.
+    // Z80CoprocessorCalls(): how many such CSPs it has done (test aid).
+    void SetZ80Coprocessor(bool on) { m_z80Coproc = on; }
+    uint64_t Z80CoprocessorCalls() const { return m_z80CoprocCount; }
+
     bool GetPreserveZ80RegisterCompat() const { return m_preserveZ80RegisterCompat; }
 
     // Feed a keystroke from the GUI thread. vk/ch follow the same
@@ -451,6 +463,8 @@ private:
     struct ErrShadow { uint16_t mscw, jtab, seg; };      // mscw 0: slot free; jtab/seg: the real pointers
     ErrShadow m_errShadow[4] = {};
     bool m_errShadowPending = false;                      // a run-time error was raised; EXECERROR's CXP is next
+    bool m_z80Coproc = true;                              // see SetZ80Coprocessor
+    uint64_t m_z80CoprocCount = 0;
     bool m_errShadowLive = false;                         // some slot is in use (RNP/RBP test only this)
     static constexpr uint16_t kErrShadowBase = 0x0048, kErrShadowSize = 12;
     static constexpr uint8_t kCodeUnit = 64;
