@@ -1,0 +1,45 @@
+PROGRAM HCODE;
+(* The Harvard layout's run-time error support and code unit 64:
+   1. a divide by zero in a segment procedure (its code on the code stack);
+      the script answers ESC, so EXECERROR returns and the program goes on
+      -- the error report's S#, P#, I# must be the same as in the normal
+      layout, and the return must still work;
+   2. UNITREAD / UNITWRITE / UNITCLEAR on unit 64: I-space as data in the
+      Harvard layout (the CXP 0,2 at 64, then a write and read back at
+      240, which nothing uses), IORESULT 2 (bad unit) in every other one. *)
+TYPE BYTES = PACKED ARRAY [0..7] OF 0..255;
+VAR B, W: BYTES; I, R, Z, N: INTEGER;
+
+SEGMENT PROCEDURE FAIL(D: INTEGER);
+  VAR Q: INTEGER;
+BEGIN
+  WRITELN('HCODE FAIL');
+  Q := 5 DIV D;
+  WRITELN('HCODE RESUMED IN SEGMENT')
+END;
+
+BEGIN
+  WRITELN('HCODE START');
+  FAIL(0);
+  WRITELN('HCODE BACK IN MAIN');
+  (*$I-*)
+  UNITREAD(64, B, 3, 64);
+  R := IORESULT;
+  IF R <> 0 THEN
+    WRITELN('HCODE: NO I-SPACE, IORESULT ', R)
+  ELSE
+    BEGIN
+      WRITELN('HCODE: I-SPACE 64..66 = ', B[0], ' ', B[1], ' ', B[2]);
+      FOR I := 0 TO 7 DO W[I] := 10 * I + 1;
+      UNITWRITE(64, W, 8, 240);
+      Z := IORESULT;
+      FOR I := 0 TO 7 DO B[I] := 0;
+      UNITREAD(64, B, 8, 240);
+      N := 0;
+      FOR I := 0 TO 7 DO IF B[I] = W[I] THEN N := N + 1;
+      WRITELN('HCODE: WRITE ', Z, ', READ BACK ', N, ' OF 8');
+      UNITCLEAR(64);
+      WRITELN('HCODE: CLEAR ', IORESULT)
+    END;
+  WRITELN('HCODE DONE')
+END.

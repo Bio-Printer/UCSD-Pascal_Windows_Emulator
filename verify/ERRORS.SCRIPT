@@ -324,6 +324,26 @@ WAIT "Type <space>"
 TYPE " "
 WAIT "Command:"
 
+# HCODE: a divide by zero in a segment procedure, answered with ESC so
+# EXECERROR returns and the program goes on, then UNITREAD / UNITWRITE /
+# UNITCLEAR on unit 64 (I-space as data in the Harvard layout, a bad unit in
+# every other) -- errtest/HCODE.TEXT, compiled by the script.
+TYPE "C"
+WAIT "Compile what text?"
+TYPE "#9:HCODE\r"
+WAIT "To what codefile?"
+TYPE "#9:HCODE\r"
+WAIT "Smallest available space"
+WAIT "Command:"
+TYPE "X"
+WAIT "Execute what file?"
+TYPE "#9:HCODE\r"
+WAIT "HCODE FAIL"
+WAIT "Type <space>"
+TYPE "\e"
+WAIT "HCODE DONE"
+WAIT "Command:"
+
 # E11: EXIT uncalled proc -- LAST: after this error the P-System halts. The
 # failed EXIT has already rewritten every frame's return point up to the
 # system's own, so the recovery EXIT(COMMAND) ends the operating system's main

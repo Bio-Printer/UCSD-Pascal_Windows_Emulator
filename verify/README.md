@@ -293,3 +293,19 @@ Regression tests: ERRORS.SCRIPT runs DEEPCXP (CXP 60 and 70 frames deep),
 DEEPC (the same in Tiny-C) and DEEPCIP (CIP from 150 frames deep) in every
 mode (Check 9); Check 13 runs the Tiny-C compile itself. The old v1.83
 engine fails both.
+
+## Harvard layout regression programs (engine 1.92)
+
+ERRORS.SCRIPT also compiles and runs two programs for the Harvard layout
+(code in its own I-space, `VERIFY_HARVARD=1` with `VERIFY_RECLAIM=1`; see
+`PSystemEngine::SetHarvard`). Both run in every layout, so Check 9 covers the
+normal layouts too:
+
+- STRCONST (errtest/STRCONST.TEXT): string and packed-array constants (LSA,
+  LPA), which the Harvard layout copies out of the code -- 13 checks.
+- HCODE (errtest/HCODE.TEXT): a divide by zero in a segment procedure,
+  answered with ESC so EXECERROR returns and the program continues; then
+  UNITREAD / UNITWRITE / UNITCLEAR on unit 64, which is I-space as data in
+  the Harvard layout and a bad unit (IORESULT 2) in every other one.
+  Check 9 also requires every error report's `S#, P#, I#` line with memory
+  reclaimed (Harvard or not) to be identical to the normal layout's.

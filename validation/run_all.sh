@@ -152,20 +152,34 @@ echo
 fi
 
 if [ $QUICK -eq 0 ] && [ -x /tmp/validation_run_verify ]; then
-echo "=== Check 9: run-time errors and regression programs -- 23 programs (verify/ERRORS.SCRIPT) ==="
+echo "=== Check 9: run-time errors and regression programs -- 24 programs (verify/ERRORS.SCRIPT) ==="
 rm -rf /tmp/vv_eref /tmp/vv_enat /tmp/vv_erec /tmp/vv_eref.pcl
 /tmp/validation_run_verify ../data ../verify/SOURCE.BLK ../verify/ERRTEST.BLK ../verify/ERRORS.SCRIPT z80 /tmp/vv_eref record:/tmp/vv_eref.pcl 600 2>/dev/null | tail -1
 /tmp/validation_run_verify ../data ../verify/SOURCE.BLK ../verify/ERRTEST.BLK ../verify/ERRORS.SCRIPT native /tmp/vv_enat compare:/tmp/vv_eref.pcl 600 2>/dev/null | tee /tmp/vv_enat.out | tail -1
 VERIFY_RECLAIM=1 /tmp/validation_run_verify ../data ../verify/SOURCE.BLK ../verify/ERRTEST.BLK ../verify/ERRORS.SCRIPT native /tmp/vv_erec "" 600 2>/dev/null | tee /tmp/vv_erec.out | tail -1
 nrep=$(grep -c "Value range error\|String overflow\|Divide by zero\|Floating point error\|IO error\|STK OFLOW\|Exit from uncalled\|No proc in seg-table" /tmp/vv_erec/transcript.txt)
-echo "     error reports with the interpreter's memory reclaimed: $nrep (expected 17; HALT prints none; E11 then halts the P-System)"
+echo "     error reports with the interpreter's memory reclaimed: $nrep (expected 18; HALT prints none; E11 then halts the P-System)"
 ncmp=$(grep -c "REALCMP: 7 of 7 comparisons true\|BYTECMP: 7 of 7 comparisons true" /tmp/vv_erec/transcript.txt)
 echo "     REAL / PACKED ARRAY OF CHAR comparison programs with memory reclaimed: $ncmp of 2 report 7 of 7"
 ndeep=$(grep -c "DEPTH 70: 1\|depth 70: ok\|DEEPCIP: 101" /tmp/vv_erec/transcript.txt)
 echo "     deep CXP / CIP programs (DEEPCXP, DEEPC, DEEPCIP) with memory reclaimed: $ndeep of 3 correct"
 nstr=$(grep -c "STRCONST: 13 OF 13 CHECKS TRUE" /tmp/vv_erec/transcript.txt)
 echo "     string / packed-array constants (STRCONST) with memory reclaimed: $nstr of 1 report 13 of 13"
-if grep -q "VERIFY SCRIPT COMPLETED" /tmp/vv_enat.out && ! grep -q MISMATCH /tmp/vv_enat.out && grep -q "VERIFY SCRIPT COMPLETED" /tmp/vv_erec.out && [ "$nrep" -eq 17 ] && [ "$ncmp" -eq 2 ] && [ "$ndeep" -eq 3 ] && [ "$nstr" -eq 1 ]; then
+# HCODE: the error's location (S#, P#, I#) must be the same in every layout
+# (the Harvard layout shows EXECERROR a copy, see PSystemEngine::SetHarvard);
+# unit 64 is I-space with VERIFY_HARVARD, a bad unit otherwise.
+grep -a "S# " /tmp/vv_enat/transcript.txt > /tmp/vv_enat.locs
+grep -a "S# " /tmp/vv_erec/transcript.txt > /tmp/vv_erec.locs
+nloc=$(wc -l < /tmp/vv_enat.locs)
+if cmp -s /tmp/vv_enat.locs /tmp/vv_erec.locs; then sameloc=1; else sameloc=0; fi
+echo "     error locations (S#, P#, I#) with memory reclaimed the same as in the normal layout: $sameloc ($nloc reports)"
+if [ -n "${VERIFY_HARVARD:-}" ] && [ "${VERIFY_HARVARD:-}" != "0" ]; then
+    nhc=$(grep -c "HCODE RESUMED IN SEGMENT\|HCODE: I-SPACE 64..66 = 205 0 2\|HCODE: WRITE 0, READ BACK 8 OF 8\|HCODE: CLEAR 0\|HCODE DONE" /tmp/vv_erec/transcript.txt)
+else
+    nhc=$(grep -c "HCODE RESUMED IN SEGMENT\|HCODE: NO I-SPACE, IORESULT 2\|HCODE DONE" /tmp/vv_erec/transcript.txt); nhc=$((nhc + 2))
+fi
+echo "     error resumed in a segment, code unit 64 (HCODE) with memory reclaimed: $nhc of 5 lines as expected"
+if grep -q "VERIFY SCRIPT COMPLETED" /tmp/vv_enat.out && ! grep -q MISMATCH /tmp/vv_enat.out && grep -q "VERIFY SCRIPT COMPLETED" /tmp/vv_erec.out && [ "$nrep" -eq 18 ] && [ "$ncmp" -eq 2 ] && [ "$ndeep" -eq 3 ] && [ "$nstr" -eq 1 ] && [ "$sameloc" -eq 1 ] && [ "$nloc" -eq 17 ] && [ "$nhc" -eq 5 ]; then
     echo "PASS"
 else
     echo "FAIL: run-time error handling"; head -12 /tmp/vv_enat.out; FAIL=1
