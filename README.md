@@ -42,3 +42,45 @@ memory), `VERIFY_UNIT10=path` (mount unit #10 in place),
 `VERIFY_IMPORT_STEP=n` at script step n, while the system runs),
 `VERIFY_TOUCH=n:path` (at step n, change the file's last-write time from
 outside, as a pull would -- tests the protection above).
+
+
+# Engine PR: CSP 138 (CALLI), version 1.91
+
+**Repository:** UCSD-Pascal_Windows_Emulator  **Base:** 7ac58ed (version 1.90)  **Branch:** `calli-csp138`
+
+## What
+Adds CSP 138, CALLI: call through a function pointer. Tiny-C used to compile such a call to a
+sequence that stored the function value into the operand bytes of the following `CXP` at run
+time (self-modifying code). It now compiles to `<arguments>; <function value>; CSP 138`.
+CALLI pops the function value (`seg | proc << 8`) and does what `CXP seg,proc` would; the
+return IPC is the instruction after the CSP.
+
+## How
+* `NativeCalli.inc` (new, included in the CSP case before `NativeDouble.inc`): another segment
+  goes through `NativeCxp.inc` (segment 0, resident, or read from disk first); the same segment
+  through CIP's BLDMSCW plus the static-link fix-up.
+* Cases the Z80 CXP would hand to real Z80 code (assembly-language procedure, stack overflow,
+  a segment the native loader declines) have no Z80 CSP to fall back on: they raise STKOVR/NOPROC.
+* Refactor of shared code, behaviour unchanged for CXP: `NativeBldmscw()` becomes a wrapper around
+  `NativeBldmscwProc(procNum, retIpc)`; `NativeCxp.inc` takes its operands from the includer
+  (`cxProcN`, `cxIpc1`, `cxIpc2`, `cxWhy`) and its one label is a macro (`CXP_POST`), because it is
+  now included twice (labels have function scope). The linux-harness copies mirror this.
+* Native P-Code mode only, like the double CSPs: the Z80 interpreter's CSPTBL has 41 entries.
+
+## Testing (Linux, g++)
+* Tiny-C (https://github.com/Bio-Printer/UCSD-C): 18 tests incl. new `funcptr`, `funcseg`
+  (CALLI into unloaded segments, recursion through a pointer); crosscheck, selfcompile, voltest,
+  tcverify native and z80 (z80 with `-z`).
+* Boot trace-diff (`linux-harness/harness`): output identical before and after.
+* `validation/pmachine_focused_diff.patch.py` and `functional_tests.py`: pass, as on 1.90.
+* Stack overflow through CALLI reports `*STK OFLOW*`, like a direct call.
+
+## Not tested / notes
+* Not built with MSVC / Visual Studio (g++ only). `NativeCalli.inc` is not listed in the .vcxproj,
+  like `NativeDouble.inc`.
+* `validation/run_all.sh` already fails its first check on 1.90 (`NativeCsp.inc` differs between
+  `UCSDPascal/` and `linux-harness/`), so I ran its other checks by hand. It will also flag
+  `NativeCalli.inc`, which is deliberately not mirrored (no Z80 baseline): see linux-harness/README.md.
+* The error paths for an assembly-language target and a declined segment load are untested.
+
+* 
