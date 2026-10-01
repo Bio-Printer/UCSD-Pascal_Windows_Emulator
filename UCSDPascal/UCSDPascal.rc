@@ -28,6 +28,8 @@ BEGIN
     END
     POPUP "&Options"
     BEGIN
+        MENUITEM "&Pause",                               ID_OPTIONS_PAUSE
+        MENUITEM SEPARATOR
         MENUITEM "Enable &Trace Logging...",             ID_OPTIONS_TRACE
         MENUITEM SEPARATOR
         POPUP "&Execution Mode"
@@ -35,6 +37,7 @@ BEGIN
             MENUITEM "&P-Code Mode  (native C opcode replacements active - faster)", ID_OPTIONS_EXECMODE_PCODE
             MENUITEM "&Z80 Mode  (pure Z80 execution - slower)",  ID_OPTIONS_EXECMODE_Z80
         END
+        MENUITEM "&Harvard Mode  Separate I && D space", ID_OPTIONS_HARVARD
         MENUITEM "Preserve Z80 &Register Compatibility", ID_OPTIONS_PRESERVE_Z80_REGS
         MENUITEM "Reclaim Z80 Interpreter and BIOS &Memory", ID_OPTIONS_RECLAIM_INTERP
         MENUITEM "Use PC &Date and Time",               ID_OPTIONS_HOST_CLOCK

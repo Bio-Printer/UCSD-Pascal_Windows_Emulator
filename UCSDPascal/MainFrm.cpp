@@ -70,6 +70,8 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
     ON_COMMAND(ID_OPTIONS_PRESERVE_Z80_REGS, &CMainFrame::OnOptionsPreserveZ80Regs)
     ON_COMMAND(ID_OPTIONS_RECLAIM_INTERP, &CMainFrame::OnOptionsReclaimInterp)
     ON_COMMAND(ID_OPTIONS_HOST_CLOCK, &CMainFrame::OnOptionsHostClock)
+    ON_COMMAND(ID_OPTIONS_HARVARD, &CMainFrame::OnOptionsHarvard)
+    ON_COMMAND(ID_OPTIONS_PAUSE, &CMainFrame::OnOptionsPause)
     ON_COMMAND(ID_OPTIONS_FONT_SMALL, &CMainFrame::OnOptionsFontSmall)
     ON_COMMAND(ID_OPTIONS_FONT_MEDIUM, &CMainFrame::OnOptionsFontMedium)
     ON_COMMAND(ID_OPTIONS_FONT_LARGE, &CMainFrame::OnOptionsFontLarge)
@@ -89,6 +91,8 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
     ON_UPDATE_COMMAND_UI(ID_OPTIONS_PRESERVE_Z80_REGS, &CMainFrame::OnUpdateOptionsPreserveZ80Regs)
     ON_UPDATE_COMMAND_UI(ID_OPTIONS_RECLAIM_INTERP, &CMainFrame::OnUpdateOptionsReclaimInterp)
     ON_UPDATE_COMMAND_UI(ID_OPTIONS_HOST_CLOCK, &CMainFrame::OnUpdateOptionsHostClock)
+    ON_UPDATE_COMMAND_UI(ID_OPTIONS_HARVARD, &CMainFrame::OnUpdateOptionsHarvard)
+    ON_UPDATE_COMMAND_UI(ID_OPTIONS_PAUSE, &CMainFrame::OnUpdateOptionsPause)
     ON_UPDATE_COMMAND_UI(ID_OPTIONS_FONT_SMALL, &CMainFrame::OnUpdateOptionsFontSmall)
     ON_UPDATE_COMMAND_UI(ID_OPTIONS_FONT_MEDIUM, &CMainFrame::OnUpdateOptionsFontMedium)
     ON_UPDATE_COMMAND_UI(ID_OPTIONS_FONT_LARGE, &CMainFrame::OnUpdateOptionsFontLarge)
@@ -549,7 +553,9 @@ void CMainFrame::OnTimer(UINT_PTR nIDEvent) {
             m_reclaimFaultShown = true;
             CString msg(L"The P-System stopped: ");
             msg += CString(m_engine->ReclaimFault().c_str());
-            msg += L"\n\nTurn off Options > Reclaim Z80 Interpreter Memory to run this program.";
+            msg += m_engine->HarvardActive()
+                ? L"\n\nTurn off Options > Harvard Mode (or Reclaim Z80 Interpreter Memory) to run this program."
+                : L"\n\nTurn off Options > Reclaim Z80 Interpreter Memory to run this program.";
             AfxMessageBox(msg, MB_ICONWARNING);
         }
         Invalidate(FALSE);
@@ -573,9 +579,9 @@ void CMainFrame::UpdateStatusBarText() {
     if (m_engine->HasHalted()) {
         text = L"System halted.";
     } else if (m_engine->IsRunning()) {
-        text = m_traceEnabled ? L"Running (tracing to trace.txt)" : L"Running";
+        text = m_paused ? L"Paused -- Options > Resume to continue" : (m_traceEnabled ? L"Running (tracing to trace.txt)" : L"Running");
         if (m_engine->NativelyBooted())
-            text += L" -- native boot";
+            text += m_engine->HarvardActive() ? L" -- native boot, Harvard mode (separate I & D space)" : L" -- native boot";
         else if (!m_engine->NativeBootNote().empty())
             text += CString(L" -- Z80 boot (native boot not possible: ") + CString(m_engine->NativeBootNote().c_str()) + L")";
     } else {
@@ -619,6 +625,7 @@ void CMainFrame::SaveSettings() {
     AfxGetApp()->WriteProfileInt(L"Options", L"PreserveZ80RegisterCompat", m_preserveZ80RegisterCompat ? 1 : 0);
     AfxGetApp()->WriteProfileInt(L"Options", L"ReclaimInterpMemory", m_reclaimInterpMemory ? 1 : 0);
     AfxGetApp()->WriteProfileInt(L"Options", L"HostClock", m_hostClock ? 1 : 0);
+    AfxGetApp()->WriteProfileInt(L"Options", L"HarvardMode", m_harvardMode ? 1 : 0);
 }
 
 void CMainFrame::RestartEngineWithCurrentPaths() {
@@ -647,6 +654,9 @@ void CMainFrame::RestartEngineWithCurrentPaths() {
     // mode with register compatibility off (the engine checks too).
     m_engine->SetReclaimInterpreterMemory(m_reclaimInterpMemory && !m_traceZ80Mode && !m_preserveZ80RegisterCompat);
     m_engine->SetHostClock(m_hostClock);   // today's date and TIME from the PC (not in Verify runs: deterministic)
+    // Harvard mode needs the reclaimed layout (the engine ignores it otherwise).
+    m_engine->SetHarvard(m_harvardMode && !m_traceZ80Mode && !m_preserveZ80RegisterCompat && m_reclaimInterpMemory);
+    m_paused = false;                      // a new engine runs
     m_reclaimFaultShown = false;
     m_bootFaultShown = false;
 
@@ -690,6 +700,7 @@ void CMainFrame::TryAutoLoad() {
     m_preserveZ80RegisterCompat = (AfxGetApp()->GetProfileInt(L"Options", L"PreserveZ80RegisterCompat", 1) != 0);
     m_reclaimInterpMemory = (AfxGetApp()->GetProfileInt(L"Options", L"ReclaimInterpMemory", 0) != 0);
     m_hostClock = (AfxGetApp()->GetProfileInt(L"Options", L"HostClock", 1) != 0);
+    m_harvardMode = (AfxGetApp()->GetProfileInt(L"Options", L"HarvardMode", 1) != 0);   // default on (engine 1.92)
 
     // pascal.bin (the Z80 loader) is needed unless the P-System boots natively
     // with nothing Z80: P-Code mode, register compatibility off, memory reclaimed.
@@ -1088,6 +1099,44 @@ void CMainFrame::OnOptionsHostClock() {
 
 void CMainFrame::OnUpdateOptionsHostClock(CCmdUI* pCmdUI) {
     pCmdUI->SetCheck(m_hostClock ? 1 : 0);
+}
+
+// Harvard mode (PSystemEngine::SetHarvard): code segments in a 64K
+// instruction space of their own, so the P-System's stack and heap get the
+// memory they took. Only in the reclaimed layout (P-Code mode, register
+// compatibility off, reclaim on) -- grayed out otherwise, keeping its check.
+void CMainFrame::OnOptionsHarvard() {
+    if (m_traceZ80Mode || m_preserveZ80RegisterCompat || !m_reclaimInterpMemory) return;   // grayed out then
+    m_harvardMode = !m_harvardMode;
+    SaveSettings();
+    if (AfxMessageBox(m_harvardMode
+            ? L"Harvard mode: code segments are kept in a separate 64K instruction space (I-space), so the "
+              L"stack and heap (D-space) get the memory the code took -- several thousand words more for "
+              L"large programs such as the compilers.\n\nAssembly-language procedures cannot run in this "
+              L"mode.\n\nThis takes effect when the P-System restarts. Restart now?"
+            : L"Code segments will be loaded into the P-System's own memory again (no separate I-space).\n\n"
+              L"This takes effect when the P-System restarts. Restart now?",
+            MB_YESNO | MB_ICONQUESTION) == IDYES)
+        RestartEngineWithCurrentPaths();
+}
+
+void CMainFrame::OnUpdateOptionsHarvard(CCmdUI* pCmdUI) {
+    pCmdUI->Enable(!m_traceZ80Mode && !m_preserveZ80RegisterCompat && m_reclaimInterpMemory);
+    pCmdUI->SetCheck(m_harvardMode ? 1 : 0);
+}
+
+// Pause / Resume: the engine thread stops executing (PSystemEngine::SetPaused);
+// keys typed meanwhile are kept until Resume. Not during Verify P-System.
+void CMainFrame::OnOptionsPause() {
+    if (m_verifyRunner || !m_engine || !m_engine->IsRunning()) return;
+    m_paused = !m_paused;
+    m_engine->SetPaused(m_paused);
+    UpdateStatusBarText();
+}
+
+void CMainFrame::OnUpdateOptionsPause(CCmdUI* pCmdUI) {
+    pCmdUI->Enable(!m_verifyRunner && m_engine && m_engine->IsRunning() && !m_engine->HasHalted());
+    pCmdUI->SetText(m_paused ? L"&Resume" : L"&Pause");
 }
 
 void CMainFrame::OnUpdateOptionsReclaimInterp(CCmdUI* pCmdUI) {
@@ -1521,6 +1570,7 @@ void CMainFrame::StartVerify(bool record, bool reclaimedRecord) {
         return;
     }
     m_engine = std::make_unique<PSystemEngine>();
+    m_paused = false;
     std::wstring werr;
     if (!m_engine->LoadFiles(m_pascalBinPath, work + L"\\VERIFY_BOOT.BLK", work + L"\\VERIFY_SOURCE.BLK", werr) ||
         !m_engine->MountUnit9(work + L"\\VERIFY_COMPASM.BLK", werr) ||
