@@ -3,7 +3,8 @@
 A Windows (MFC) emulator of the UCSD Pascal II.0 P-System: a Z80 machine
 with native P-Code execution (`UCSDPascal/PSystemEngine.cpp` and the
 `Native*.inc` files), including the 8-byte `double` CSPs 100..137
-(`NativeDouble.inc`) used by Tiny-C (https://github.com/Bio-Printer/UCSD-C).
+(`NativeDouble.inc`) and CSP 138, CALLI -- call through a function pointer
+(`NativeCalli.inc`) -- used by Tiny-C (https://github.com/Bio-Printer/UCSD-C).
 
 * **Build:** open `UCSDPascal.sln` in Visual Studio (x64). `data/pascal.bin`
   (the Z80 loader) is copied next to the .exe by the build.

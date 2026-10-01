@@ -1,9 +1,20 @@
 // NativeCxp.inc -- shared by PSystemEngine.cpp and the linux-harness copies.
 // Included inside CXP after the same-segment fast path has been ruled out.
 // Host must #define PM_MEM, PM_CPU, PM_PRESERVE, PM_COUNT(op) and provide
-// NativeBldmscw(), PushStackWord(). Expects in scope: bc (BC at CXP entry,
-// pointing at seg_num), segNum, segp (current SEGP), and the switch's
-// `commit` flag.
+// NativeBldmscwProc(), PushStackWord(). Expects in scope: segNum, segp (current
+// SEGP), the switch's `commit` flag, and the call's operands, which the
+// includer supplies so that the same code serves CXP and CSP 138 (CALLI,
+// NativeCalli.inc), whose segment and procedure come off the stack:
+//   cxProcN  the procedure number
+//   cxIpc1   IPC after the segment number (what CXP $10 saves in SAVIPC)
+//   cxIpc2   the return IPC, after the procedure number (CXP: BC + 2)
+//   CXP_POST (macro) the name of this include's one internal label: labels have
+//            function scope, so each include in a function needs its own
+//   cxWhy    (int, 0) set when the call is declined, i.e. nothing was
+//            touched and the real Z80 code would take over: 1 = stack
+//            overflow, 2 = assembly-language procedure, 3 = segment not
+//            natively readable. CXP ignores it; CALLI, which has no Z80
+//            code to fall back on, raises the matching error.
 //
 // Handles natively:
 //   * seg 0 (the op sys): refcount[0]++, NEWSEG := MEMTOP, BLDXNL, CBPXNL
@@ -42,30 +53,30 @@ do {
         // BEFORE the first write.
         SegLoadPlan cxPlan;
         const int cxSl = slLoad(segNum, PM_CPU.r.SP, cxPlan);
-        if (cxSl == SL_DECLINE) break;                             // stays Z80
+        if (cxSl == SL_DECLINE) { cxWhy = 3; break; }              // stays Z80
         if (cxSl != SL_OK) {                                       // segment load error (compat off only)
-            if (PM_PRESERVE) break;
-            cxWr(PM_V(0x0246), (uint16_t)(bc + 1));                      // CXP $10: SAVIPC, then CALL GETSEG
+            if (PM_PRESERVE) { cxWhy = 3; break; }
+            cxWr(PM_V(0x0246), cxIpc1);                                  // CXP $10: SAVIPC, then CALL GETSEG
             PM_CPU.r.PC = slError(cxPlan, cxSl, 0x13C1);           // NOPROC / SYIOER (NativeErrors.inc)
             break;
         }
-        uint8_t  cxProc = PM_MEM[(uint16_t)(bc + 1)];
+        uint8_t  cxProc = cxProcN;
         uint16_t cxPtr  = (uint16_t)(cxPlan.newseg - (uint16_t)(cxProc * 2));
-        if (!cxPlan.inImage(cxPtr, 2)) break;
+        if (!cxPlan.inImage(cxPtr, 2)) { cxWhy = 3; break; }
         uint16_t cxJt   = (uint16_t)(cxPtr - cxPlan.img16(cxPtr));
-        if (!cxPlan.inImage((uint16_t)(cxJt - 8), 9)) break;
-        if (cxPlan.image[(uint16_t)(cxJt - cxPlan.segbot)] == 0) break; // assembly procedure: stays Z80
+        if (!cxPlan.inImage((uint16_t)(cxJt - 8), 9)) { cxWhy = 3; break; }
+        if (cxPlan.image[(uint16_t)(cxJt - cxPlan.segbot)] == 0) { cxWhy = 2; break; } // assembly procedure: stays Z80
         uint16_t cxDs = cxPlan.img16((uint16_t)(cxJt - 8));
         uint16_t cxPs = cxPlan.img16((uint16_t)(cxJt - 6));
         uint16_t cxSpF = (uint16_t)(cxPlan.segbot - cxDs - cxPs - 12);
-        if ((uint16_t)(cxSpF - 62) < cxRd(PM_V(0x0240))) break;        // STKOVR: stays Z80
+        if ((uint16_t)(cxSpF - 62) < cxRd(PM_V(0x0240))) { cxWhy = 1; break; } // STKOVR: stays Z80
 
         // ---- commit ----
-        cxWr(PM_V(0x0246), (uint16_t)(bc + 1));                        // CXP $10: SAVIPC
+        cxWr(PM_V(0x0246), cxIpc1);                                    // CXP $10: SAVIPC
         slCommit(cxPlan);                                         // SP := SEGBOT, segment loaded + relocated
         cxNewSeg = cxPlan.newseg;
         // BLD3: A := proc_num; INC BC; SAVIPC
-        uint16_t cxBc2 = (uint16_t)(bc + 2);
+        uint16_t cxBc2 = cxIpc2;
         PM_CPU.r.setBC(cxBc2);
         cxWr(PM_V(0x0246), cxBc2);
         uint16_t tAddr = (uint16_t)(cxNewSeg - (uint16_t)(cxProc * 2));
@@ -96,7 +107,7 @@ do {
             PM_CPU.r.setDE(eSval);
         }
         PM_COUNT(OP_CXP);
-        goto cxPost;
+        goto CXP_POST;
     }
     { // resident / seg-0 path in its own scope so `goto cxPost` above skips it cleanly
     if (segNum == 0) {
@@ -106,13 +117,13 @@ do {
     }
 
     // Precheck exactly what NativeBldmscw will do with this NEWSEG.
-    uint16_t cxBc1   = (uint16_t)(bc + 1);        // IPC past seg_num (points at proc_num)
-    uint8_t  cxProc  = PM_MEM[cxBc1];
+    uint16_t cxBc1   = cxIpc1;                    // IPC past seg_num (CXP: points at proc_num)
+    uint8_t  cxProc  = cxProcN;
     uint16_t cxTAddr = (uint16_t)(cxNewSeg - (uint16_t)(cxProc * 2));
     uint16_t cxJtab  = (uint16_t)(cxTAddr - cxRd(cxTAddr));
-    if (PM_MEM[cxJtab] == 0) break;               // assembly procedure: stays Z80
+    if (PM_MEM[cxJtab] == 0) { cxWhy = 2; break; } // assembly procedure: stays Z80
     uint16_t cxDatasz = cxRd((uint16_t)(cxJtab - 8));
-    if ((uint16_t)(PM_CPU.r.SP - cxDatasz - 12 - 60) < cxRd(PM_V(0x0240))) break; // STKOVR: stays Z80
+    if ((uint16_t)(PM_CPU.r.SP - cxDatasz - 12 - 60) < cxRd(PM_V(0x0240))) { cxWhy = 1; break; } // STKOVR: stays Z80
 
     // ---- commit ----
     PM_CPU.r.setBC(cxBc1);
@@ -122,12 +133,12 @@ do {
     }
     cxWr(cxRefAddr, (uint16_t)(cxRd(cxRefAddr) + 1)); // refcount++
     cxWr(PM_V(0x02F6), cxNewSeg);                       // SEGP := NEWSEG so NativeBldmscw builds with it
-    NativeBldmscw();                              // cannot fail: both failure cases prechecked above
+    NativeBldmscwProc(cxProc, cxIpc2);            // cannot fail: both failure cases prechecked above
     cxNewMP = cxRd(PM_V(0x02F2));
     cxWr((uint16_t)(cxNewMP + 6), segp);          // msseg = caller's segment, as BLDXNL pushes it
     PM_COUNT(OP_CXP);
     }
-  cxPost:
+  CXP_POST:
     {
 
     uint16_t cxEntry = PM_CPU.r.BC();

@@ -638,10 +638,14 @@ bool NativeDiskRead(uint16_t unit, uint16_t block, uint16_t len, std::vector<uin
     }
 
 bool NativeBldmscw() {
+    uint16_t bc0 = cpu.r.BC();
+    return NativeBldmscwProc(mem[bc0], (uint16_t)(bc0 + 1));
+}
+// BLDMSCW with the procedure number and the return IPC given (as in PSystemEngine.cpp: CSP 138 uses it)
+bool NativeBldmscwProc(uint8_t procNum, uint16_t retIpc) {
     uint16_t segp = (uint16_t)(mem[0x02F6] | (mem[0x02F7] << 8));
     mem[0x02CA] = segp & 0xFF; mem[0x02CB] = segp >> 8;
-    uint16_t bc = cpu.r.BC();
-    uint8_t procNum = mem[bc]; bc = (uint16_t)(bc + 1);
+    uint16_t bc = retIpc;
     cpu.r.setBC(bc);
     mem[0x0246] = bc & 0xFF; mem[0x0247] = bc >> 8;
     uint16_t tAddr = (uint16_t)(segp - (uint16_t)(procNum * 2));
@@ -1403,7 +1407,13 @@ case OP_CXP: { // CXP (same-segment fast path only)
                     uint8_t curSegByte = mem[segp];
 
                     if (segNum != curSegByte) { // different segment: seg 0 / resident natively, disk read stays Z80
+const uint8_t  cxProcN = mem[(uint16_t)(bc + 1)];   // operands for NativeCxp.inc
+const uint16_t cxIpc1 = (uint16_t)(bc + 1);
+const uint16_t cxIpc2 = (uint16_t)(bc + 2);
+int cxWhy = 0;
+#define CXP_POST cxPost
 #include "NativeCxp.inc"
+#undef CXP_POST
                         break;
                     }
 

@@ -967,14 +967,22 @@ bool PSystemEngine::NativeDiskRead(uint16_t unit, uint16_t block, uint16_t len, 
 }
 
 bool PSystemEngine::NativeBldmscw() {
+    // Read proc_num from the code stream; the return IPC is the byte after it
+    const uint16_t bc = m_cpu.r.BC();
+    return NativeBldmscwProc(m_mem[bc], (uint16_t)(bc + 1));
+}
+
+// BLDMSCW with the procedure number and the return IPC supplied, not read
+// from the code stream: CXP/CIP/CLP/CGP/CBP pass the byte at BC and BC + 1;
+// CSP 138 (CALLI, NativeCalli.inc) the procedure from the function value and
+// the address after the CSP.
+bool PSystemEngine::NativeBldmscwProc(uint8_t procNum, uint16_t retIpc) {
     // Save NEWSEG = current SEGP
     uint16_t segp = (uint16_t)(m_mem[PM_V(0x02F6)] | (m_mem[PM_V(0x02F7)] << 8));
     m_mem[PM_V(0x02CA)] = segp & 0xFF; m_mem[PM_V(0x02CB)] = segp >> 8; // NEWSEG
 
-    // Read proc_num from the code stream, advance IPC
-    uint16_t bc = m_cpu.r.BC();
-    uint8_t procNum = m_mem[bc];
-    bc = (uint16_t)(bc + 1);
+    // Advance IPC to the return address
+    uint16_t bc = retIpc;
     m_cpu.r.setBC(bc);
     m_mem[PM_V(0x0246)] = bc & 0xFF; m_mem[PM_V(0x0247)] = bc >> 8; // SAVIPC
 
@@ -2923,7 +2931,9 @@ void PSystemEngine::RunLoop() {
                 // bomb-the-program behavior -- these are rare, and the
                 // real Z80 CSPTRAP path (for a selector this build's own
                 // CSPTBL leaves at zero) is a reasonable fallback.
-                // 12-byte floating point: CSP 100..137 (NativeFloat12.inc)
+                // CSP 138: call through a function pointer (NativeCalli.inc)
+#include "NativeCalli.inc"
+                // 8-byte floating point (double): CSP 100..137 (NativeDouble.inc)
 #include "NativeDouble.inc"
                 if (procNum >= 25 && procNum <= 31) {
                     uint16_t lowWord  = PeekStackWord(0);
@@ -3244,7 +3254,13 @@ void PSystemEngine::RunLoop() {
                 uint8_t curSegByte = m_mem[segp]; // SEGP dereferenced as a pointer, one byte
 
                 if (segNum != curSegByte) { // different segment: seg 0 / resident natively, disk read stays Z80
+                    const uint8_t  cxProcN = m_mem[(uint16_t)(bc + 1)];   // operands for NativeCxp.inc (shared with CSP 138)
+                    const uint16_t cxIpc1  = (uint16_t)(bc + 1);
+                    const uint16_t cxIpc2  = (uint16_t)(bc + 2);
+                    int cxWhy = 0;                                        // (set when declined; unused here: the Z80 code takes over)
+#define CXP_POST cxPost
 #include "NativeCxp.inc"
+#undef CXP_POST
                     break;
                 }
 

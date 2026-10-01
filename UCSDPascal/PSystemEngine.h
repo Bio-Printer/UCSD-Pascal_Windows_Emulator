@@ -494,6 +494,7 @@ private:
     // handler or leaves state unmodified) for assembly-language procedures
     // or stack overflow.
     bool NativeBldmscw();
+    bool NativeBldmscwProc(uint8_t procNum, uint16_t retIpc);   // NativeBldmscw with the procedure number and return IPC given (CXP, CSP 138)
     bool NativeDiskRead(uint16_t unit, uint16_t block, uint16_t len, std::vector<uint8_t>& out);
     bool NativeBiosCall(uint8_t fn, uint8_t c, uint8_t* aOut, bool dryRun);
 
