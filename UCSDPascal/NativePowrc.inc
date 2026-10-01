@@ -8,7 +8,7 @@
 //   <=      : no bit of set_a outside set_b; set_a's extra words zero
 //   >=      : no bit of set_b outside set_a; set_b's extra words zero
 // ALEQB (sza <= szb) and NEWSP are written as the real code writes them.
-if (!PM_PRESERVE && PM_MEM[PM_CPU.r.BC()] == 8) {
+if (!PM_PRESERVE && PM_CODE8(PM_CPU.r.BC()) == 8) {
     const uint8_t pcOp = (uint8_t)nativeOpcodeLookup;
     const uint16_t pcIpc = (uint16_t)(PM_CPU.r.BC() + 1);
     const uint16_t pcSp = PM_CPU.r.SP;

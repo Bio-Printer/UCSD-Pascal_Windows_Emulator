@@ -15,6 +15,9 @@
 #define PM_PRESERVE preserveZ80RegCompat
 #define PM_COUNT(op) { opcodeEmulatedCount[op]++; lastNativeOpcode = op; }
 #define PM_ROM(a) mem[(uint16_t)(a)]   // interpreter tables / code bytes (see NativeCsp.inc)
+#define PM_CODE8(a) (mem[(uint16_t)(a)])   // code accesses (see PSystemEngine.cpp): one memory here
+#define PM_CODE16(a) ((uint16_t)(mem[(uint16_t)(a)] | (mem[(uint16_t)((a) + 1)] << 8)))
+#define PM_CODEW8(a, v) (mem[(uint16_t)(a)] = (uint8_t)(v))
 #define PM_IOCFG IoConfig()   // unit-I/O configuration (PCodeOpcodes.h)
 // run-time errors (NativeErrors.inc)
 #define PM_NATIVE_ERRORS (useNativeOps && !preserveZ80RegCompat)

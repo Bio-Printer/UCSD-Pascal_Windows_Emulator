@@ -130,13 +130,13 @@
                 uint16_t bb = PeekStackWord(0), aa = PeekStackWord(2);
                 bool jump = (nativeOpcodeLookup == OP_EFJ) ? (aa != bb) : (aa == bb);
                 uint16_t ipc = PM_CPU.r.BC();
-                uint8_t ofs = PM_MEM[ipc];
+                uint8_t ofs = PM_CODE8(ipc);
                 PopStackWord(); PopStackWord();
                 if (!jump) PM_CPU.r.setBC((uint16_t)(ipc + 1));                  // NOJ
                 else if (!(ofs & 0x80)) PM_CPU.r.setBC((uint16_t)(ipc + 1 + ofs)); // UJP short
                 else {                                                            // UJP long: jump table
                     uint16_t entry = (uint16_t)(NO_RD16(PM_V(0x02F4)) + ofs - 256);
-                    PM_CPU.r.setBC((uint16_t)(entry - NO_RD16(entry)));
+                    PM_CPU.r.setBC((uint16_t)(entry - PM_CODE16(entry)));
                 }
                 commit = true; PM_COUNT((uint8_t)nativeOpcodeLookup);
                 break;
@@ -144,8 +144,8 @@
             case OP_BPT: {                                       // conditional halt / breakpoint
                 if (PM_PRESERVE) break;
                 uint16_t ipc = PM_CPU.r.BC();
-                uint8_t b0 = PM_MEM[ipc];
-                uint16_t line = (b0 & 0x80) ? (uint16_t)(((b0 & 0x7F) << 8) | PM_MEM[(uint16_t)(ipc + 1)]) : b0; // GBDE
+                uint8_t b0 = PM_CODE8(ipc);
+                uint16_t line = (b0 & 0x80) ? (uint16_t)(((b0 & 0x7F) << 8) | PM_CODE8((uint16_t)(ipc + 1))) : b0; // GBDE
                 uint16_t next = (uint16_t)(ipc + ((b0 & 0x80) ? 2 : 1));
                 bool halt = (((uint8_t)(PM_MEM[PM_V(0x02EA)] - 3)) & 0x80) == 0;  // BUGSTA >= 3 (CP 3; JP P)
                 for (int k = 0; k < 4 && !halt; k++)

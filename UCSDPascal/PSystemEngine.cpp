@@ -15,6 +15,15 @@
 #define PM_PRESERVE m_preserveZ80RegisterCompat
 #define PM_COUNT(op) m_opcodeEmulatedCount[op]++
 #define PM_ROM(a) (m_rom.empty() ? m_mem[(uint16_t)(a)] : m_rom[(uint16_t)(a)])   // interpreter tables / code bytes (see NativeCsp.inc)
+// Code (instruction-stream) accesses: the P-code instructions, their inline
+// operands and constants, the procedure dictionary and attribute tables of a
+// code segment, and the segment loader's writes. Every read of code goes
+// through PM_CODE8/PM_CODE16 and every write of code through PM_CODEW8, so a
+// host can keep code in a memory of its own (the Harvard layout of P-Code
+// mode); a host with one memory maps them onto it.
+#define PM_CODE8(a) (m_mem[(uint16_t)(a)])
+#define PM_CODE16(a) ((uint16_t)(m_mem[(uint16_t)(a)] | (m_mem[(uint16_t)((a) + 1)] << 8)))
+#define PM_CODEW8(a, v) (m_mem[(uint16_t)(a)] = (uint8_t)(v))
 #define PM_IOCFG IoConfig()   // unit-I/O configuration (PCodeOpcodes.h)
 // run-time errors (NativeErrors.inc)
 #define PM_NATIVE_ERRORS (m_nativePcodeOps && !m_preserveZ80RegisterCompat)
@@ -339,7 +348,7 @@ void PSystemEngine::VerifyLogStep() {
     auto put = [&](int o, uint16_t v) { r[o] = (uint8_t)v; r[o + 1] = (uint8_t)(v >> 8); };
     auto rd = [&](uint16_t a) { return (uint16_t)(m_mem[a] | (m_mem[(uint16_t)(a + 1)] << 8)); };
     uint16_t bc = m_cpu.r.BC(), sp = m_cpu.r.SP;
-    put(0, bc); r[2] = m_mem[bc]; put(3, sp);
+    put(0, bc); r[2] = PM_CODE8(bc); put(3, sp);
     put(5, rd(PM_V(0x0240))); put(7, rd(PM_V(0x0242))); put(9, rd(PM_V(0x0244))); put(11, rd(PM_V(0x0246)));
     put(13, rd(PM_V(0x02F2))); put(15, rd(PM_V(0x02F0))); put(17, rd(PM_V(0x02F4))); put(19, rd(PM_V(0x02F6)));
     put(21, rd(sp)); put(23, rd((uint16_t)(sp + 2)));
@@ -864,11 +873,11 @@ bool PSystemEngine::NativeBoot(std::string& why, bool reclaimLayout) {
     memset(m_mem + PM_V(0x0254), 0, 60);                   // INTSEGT[1..]: cleared
     wr16(PM_V(0x0250), 1); wr16(PM_V(0x0252), memtop);           // INTSEGT[0]: the operating system
     wr16(PM_V(0x02F6), memtop);                            // step 5: SEGP
-    const uint16_t jtab = (uint16_t)(memtop - 2 - rd16((uint16_t)(memtop - 2)));
+    const uint16_t jtab = (uint16_t)(memtop - 2 - PM_CODE16((uint16_t)(memtop - 2)));
     wr16(PM_V(0x02F4), jtab);                              // JTAB (self-relative)
-    const uint16_t ipc = (uint16_t)(jtab - 2 - rd16((uint16_t)(jtab - 2)));
+    const uint16_t ipc = (uint16_t)(jtab - 2 - PM_CODE16((uint16_t)(jtab - 2)));
     wr16(PM_V(0x0246), ipc);                               // IPCSAV (self-relative)
-    const uint16_t datasz = rd16((uint16_t)(jtab - 8));
+    const uint16_t datasz = PM_CODE16((uint16_t)(jtab - 8));
     sp = (uint16_t)(sp - datasz);                    // the outer block's data
     const uint16_t frameSp = sp;
     auto push = [&](uint16_t v) { sp = (uint16_t)(sp - 2); wr16(sp, v); };
@@ -969,7 +978,7 @@ bool PSystemEngine::NativeDiskRead(uint16_t unit, uint16_t block, uint16_t len, 
 bool PSystemEngine::NativeBldmscw() {
     // Read proc_num from the code stream; the return IPC is the byte after it
     const uint16_t bc = m_cpu.r.BC();
-    return NativeBldmscwProc(m_mem[bc], (uint16_t)(bc + 1));
+    return NativeBldmscwProc(PM_CODE8(bc), (uint16_t)(bc + 1));
 }
 
 // BLDMSCW with the procedure number and the return IPC supplied, not read
@@ -991,18 +1000,18 @@ bool PSystemEngine::NativeBldmscwProc(uint8_t procNum, uint16_t retIpc) {
     // The stored value is a negative-self-relative 16-bit word:
     //   jtab_addr = table_entry_addr - stored_val  (uint16 arithmetic)
     uint16_t tAddr = (uint16_t)(segp - (uint16_t)(procNum * 2));
-    uint16_t tSval = (uint16_t)(m_mem[tAddr] | (m_mem[(uint16_t)(tAddr + 1)] << 8));
+    uint16_t tSval = PM_CODE16(tAddr);
     uint16_t jtab  = (uint16_t)(tAddr - tSval);
     m_mem[PM_V(0x02CC)] = jtab & 0xFF; m_mem[PM_V(0x02CD)] = jtab >> 8; // NEWJTB
 
     // Assembly-language procedure? (first byte of jtab = 0 → fall through)
-    if (m_mem[jtab] == 0) return false;
+    if (PM_CODE8(jtab) == 0) return false;
 
     // Read datasz and parmsz from the jtab header (at jtab + DATASZ, where
     // DATASZ .EQU 0FFF8H = -8, so datasz is at jtab-8, parmsz at jtab-6).
     uint16_t dOff  = (uint16_t)(jtab - 8);
-    uint16_t datasz = (uint16_t)(m_mem[dOff]             | (m_mem[(uint16_t)(dOff+1)] << 8));
-    uint16_t parmsz = (uint16_t)(m_mem[(uint16_t)(dOff+2)] | (m_mem[(uint16_t)(dOff+3)] << 8));
+    uint16_t datasz = PM_CODE16(dOff);
+    uint16_t parmsz = PM_CODE16((uint16_t)(dOff + 2));
 
     // Non-CXP path: extend the stack by datasz only (not datasz+parmsz).
     uint16_t oldSP = m_cpu.r.SP;
@@ -1044,7 +1053,7 @@ bool PSystemEngine::NativeBldmscwProc(uint8_t procNum, uint16_t retIpc) {
     // Compute the procedure's entry address (2 bytes before jtab, same
     // negative-self-relative encoding): entry_addr = (jtab-2) - stored_val
     uint16_t eRef  = (uint16_t)(jtab - 2);
-    uint16_t eSval = (uint16_t)(m_mem[eRef] | (m_mem[(uint16_t)(eRef + 1)] << 8));
+    uint16_t eSval = PM_CODE16(eRef);
     uint16_t entry = (uint16_t)(eRef - eSval);
     m_cpu.r.setBC(entry); // BC = new IPC = entry point of called procedure
 
@@ -1477,7 +1486,7 @@ uint16_t PSystemEngine::PeekStackWord(int byteOffsetFromSP) const {
 
 uint16_t PSystemEngine::DecodeGBDE() {
     uint16_t bc = m_cpu.r.BC();
-    uint8_t a = m_mem[bc];
+    uint8_t a = PM_CODE8(bc);
     bc = (uint16_t)(bc + 1);
     if ((a & 0x80) == 0) {
         m_cpu.r.setBC(bc);
@@ -1485,7 +1494,7 @@ uint16_t PSystemEngine::DecodeGBDE() {
         return a;
     }
     uint8_t hi = a & 0x7F;
-    uint8_t lo = m_mem[bc];
+    uint8_t lo = PM_CODE8(bc);
     bc = (uint16_t)(bc + 1);
     m_cpu.r.setBC(bc);
     m_cpu.r.A = lo; // real GBDE re-loads A from the SECOND operand byte (the low
@@ -1496,7 +1505,7 @@ uint16_t PSystemEngine::DecodeGBDE() {
 }
 
 uint16_t PSystemEngine::GetIA() {
-    uint8_t lexLevels = m_mem[m_cpu.r.BC()];
+    uint8_t lexLevels = PM_CODE8(m_cpu.r.BC());
     m_cpu.r.setBC((uint16_t)(m_cpu.r.BC() + 1));
     uint16_t hl = (uint16_t)(m_mem[PM_V(0x02F2)] | (m_mem[PM_V(0x02F3)] << 8)); // HL = MP
     for (uint8_t i = 0; i < lexLevels; i++) {
@@ -1549,7 +1558,7 @@ void PSystemEngine::NativeSrs(uint16_t i, uint16_t j) {
 }
 
 bool PSystemEngine::CmpSetupOrdering(bool& outCarry, bool& outZero) {
-    uint8_t typeCode = m_mem[m_cpu.r.BC()]; // peek only until a type is confirmed handled
+    uint8_t typeCode = PM_CODE8(m_cpu.r.BC()); // peek only until a type is confirmed handled
     if (typeCode == 6) { // BOOLC
         m_cpu.r.setBC((uint16_t)(m_cpu.r.BC() + 1));
         m_mem[PM_V(0x0246)] = m_cpu.r.BC() & 0xFF; m_mem[PM_V(0x0247)] = m_cpu.r.BC() >> 8; // SAVIPC
@@ -2050,7 +2059,7 @@ void PSystemEngine::RunLoop() {
             if (m_cpu.r.PC != 0x03B0) return;
             tracingActive = true; // arm on first BACK (proof interpreter is running)
             uint16_t bc     = m_cpu.r.BC(); // bc IS the IPC at this point
-            uint8_t  opcode = m_mem[bc];
+            uint8_t  opcode = PM_CODE8(bc);
             m_opcodeFetchCount[opcode]++;   // count here -- not in the dispatch block
             if (opcode == OP_CSP) {
                 // CSP's procedure-number byte is the one right after its own
@@ -2063,7 +2072,7 @@ void PSystemEngine::RunLoop() {
                 // unconditionally right above. CSP's native case no longer
                 // increments this itself (see its own comment) to avoid
                 // double-counting in native mode.
-                m_cspSelectorCount[m_mem[(uint16_t)(bc + 1)]]++;
+                m_cspSelectorCount[PM_CODE8((uint16_t)(bc + 1))]++;
             }
             if (m_tracing && m_traceFile) {
                 fprintf(m_traceFile,
@@ -2160,7 +2169,7 @@ void PSystemEngine::RunLoop() {
         // lookup rather than a value stored here).
         if (m_nativePcodeOps && m_cpu.r.PC == 0x03B0) {
             m_ipc = m_cpu.r.BC(); // P-machine IPC register; BC is still the ground truth here
-            uint8_t opcode = m_mem[m_ipc];
+            uint8_t opcode = PM_CODE8(m_ipc);
             // NOTE: opcode already counted by logPcodeAtBack() above.
             m_ipc = (uint16_t)(m_ipc + 1);
             m_cpu.r.setBC(m_ipc);
@@ -2509,7 +2518,7 @@ void PSystemEngine::RunLoop() {
                             // encoding is handled natively (the common case,
                             // same as FJP); the rarer jump-table-indexed long
                             // jump falls through untouched, exactly like FJP.
-                uint8_t ofs = m_mem[m_cpu.r.BC()];
+                uint8_t ofs = PM_CODE8(m_cpu.r.BC());
                 if ((ofs & 0x80) == 0) {
                     uint16_t newBC = (uint16_t)(m_cpu.r.BC() + 1 + ofs);
                     m_cpu.r.setBC(newBC); // IPC jump target -- functionally required, not a compat mirror
@@ -2522,7 +2531,7 @@ void PSystemEngine::RunLoop() {
                     // (Z80 UJP $10: LD HL,(JTAB); BC := FFxx; ADD HL,BC; SELREL).
                     uint16_t jtab = (uint16_t)(m_mem[PM_V(0x02F4)] | (m_mem[PM_V(0x02F5)] << 8));
                     uint16_t entry = (uint16_t)(jtab + ofs - 256);
-                    uint16_t rel = (uint16_t)(m_mem[entry] | (m_mem[(uint16_t)(entry + 1)] << 8));
+                    uint16_t rel = PM_CODE16(entry);
                     uint16_t target = (uint16_t)(entry - rel);
                     m_cpu.r.setBC(target);
                     if (m_preserveZ80RegisterCompat) { m_cpu.r.A = ofs; m_cpu.r.setDE(rel); m_cpu.r.setHL(target); }
@@ -2767,8 +2776,8 @@ void PSystemEngine::RunLoop() {
                             // code stream, NOT GBDE's variable-length
                             // encoding.
                 uint16_t bc = m_cpu.r.BC();
-                uint8_t lo = m_mem[bc];
-                uint8_t hi = m_mem[(uint16_t)(bc + 1)];
+                uint8_t lo = PM_CODE8(bc);
+                uint8_t hi = PM_CODE8((uint16_t)(bc + 1));
                 m_cpu.r.setBC((uint16_t)(bc + 2)); // IPC advance past the 2-byte literal -- not a compat mirror, stays unconditional
                 uint16_t value = (uint16_t)((hi << 8) | lo);
                 PushStackWord(value);
@@ -2796,7 +2805,7 @@ void PSystemEngine::RunLoop() {
 
                 uint16_t mpd0Val = (uint16_t)(m_mem[PM_V(0x0242)] | (m_mem[PM_V(0x0243)] << 8));
                 uint16_t oldSP = (uint16_t)(m_mem[mpd0Val] | (m_mem[(uint16_t)(mpd0Val + 1)] << 8));
-                uint8_t numWords = m_mem[m_cpu.r.BC()];
+                uint8_t numWords = PM_CODE8(m_cpu.r.BC());
                 uint16_t bytesToReturn = (uint16_t)(numWords * 2);
                 uint16_t srcStart = (uint16_t)(mpd0Val + 2);
                 uint16_t destStart = (uint16_t)(oldSP - bytesToReturn);
@@ -2890,7 +2899,7 @@ void PSystemEngine::RunLoop() {
                             // trap into the OS") case falls through completely
                             // untouched, exactly like FJP/UJP's rare-case
                             // handling.
-                uint8_t procNum = m_mem[m_cpu.r.BC()];
+                uint8_t procNum = PM_CODE8(m_cpu.r.BC());
                 // m_cspSelectorCount[procNum] is now counted unconditionally
                 // in logPcodeAtBack() (Site 1 above), so it's tracked in Z80
                 // mode too -- not incremented again here, which would
@@ -3072,7 +3081,7 @@ void PSystemEngine::RunLoop() {
                             // case peeks the count first and falls through
                             // completely untouched rather than guessing.
                 uint16_t bc = m_cpu.r.BC();
-                uint8_t count = m_mem[bc]; // peek only until we've decided to commit
+                uint8_t count = PM_CODE8(bc); // peek only until we've decided to commit
                 if (count == 0) break; // fall through untouched
                 m_cpu.r.setBC((uint16_t)(bc + 1));
                 uint16_t srcAddr = PopStackWord();
@@ -3117,7 +3126,7 @@ void PSystemEngine::RunLoop() {
                             // instead of being buried, and reaches that
                             // same shared "$20: POP HL" tail directly.
                 uint16_t bc = m_cpu.r.BC();
-                uint8_t numWords = m_mem[bc];
+                uint8_t numWords = PM_CODE8(bc);
                 bc = (uint16_t)(bc + 1);
                 m_cpu.r.setBC(bc);
 
@@ -3249,12 +3258,12 @@ void PSystemEngine::RunLoop() {
                             // target, or an imminent STKOVR still falls
                             // through to real Z80 code, untouched.
                 uint16_t bc = m_cpu.r.BC();
-                uint8_t segNum = m_mem[bc]; // peek
+                uint8_t segNum = PM_CODE8(bc); // peek
                 uint16_t segp = (uint16_t)(m_mem[PM_V(0x02F6)] | (m_mem[PM_V(0x02F7)] << 8));
                 uint8_t curSegByte = m_mem[segp]; // SEGP dereferenced as a pointer, one byte
 
                 if (segNum != curSegByte) { // different segment: seg 0 / resident natively, disk read stays Z80
-                    const uint8_t  cxProcN = m_mem[(uint16_t)(bc + 1)];   // operands for NativeCxp.inc (shared with CSP 138)
+                    const uint8_t  cxProcN = PM_CODE8((uint16_t)(bc + 1));   // operands for NativeCxp.inc (shared with CSP 138)
                     const uint16_t cxIpc1  = (uint16_t)(bc + 1);
                     const uint16_t cxIpc2  = (uint16_t)(bc + 2);
                     int cxWhy = 0;                                        // (set when declined; unused here: the Z80 code takes over)
@@ -3304,8 +3313,8 @@ void PSystemEngine::RunLoop() {
                 uint16_t bc = m_cpu.r.BC();
                 bc = (uint16_t)(bc + 1);
                 uint16_t tableAddr = (uint16_t)(bc & 0xFFFE); // round up to word boundary
-                uint16_t minVal = (uint16_t)(m_mem[tableAddr] | (m_mem[(uint16_t)(tableAddr + 1)] << 8));
-                uint16_t maxVal = (uint16_t)(m_mem[(uint16_t)(tableAddr + 2)] | (m_mem[(uint16_t)(tableAddr + 3)] << 8));
+                uint16_t minVal = PM_CODE16(tableAddr);
+                uint16_t maxVal = PM_CODE16((uint16_t)(tableAddr + 2));
                 uint16_t elseWordAddr = (uint16_t)(tableAddr + 4); // address of the else-jump slot itself
 
                 uint16_t indexVal = PeekStackWord(0); // don't commit the pop until we've decided
@@ -3326,7 +3335,7 @@ void PSystemEngine::RunLoop() {
 
                 PopStackWord(); // commit
                 uint16_t entryAddr = (uint16_t)(elseWordAddr + 2 + 2 * (uint16_t)(indexS - minS));
-                uint16_t storedVal = (uint16_t)(m_mem[entryAddr] | (m_mem[(uint16_t)(entryAddr + 1)] << 8));
+                uint16_t storedVal = PM_CODE16(entryAddr);
                 uint16_t target = (uint16_t)(entryAddr - storedVal); // negative-self-relative decode
 
                 m_mem[PM_V(0x0246)] = elseWordAddr & 0xFF; m_mem[PM_V(0x0247)] = elseWordAddr >> 8; // IPCSAV
@@ -3379,7 +3388,7 @@ void PSystemEngine::RunLoop() {
                             // the length byte) and advances the IPC past
                             // the entire array.
                 uint16_t bc = m_cpu.r.BC();
-                uint8_t length = m_mem[bc];
+                uint8_t length = PM_CODE8(bc);
                 bc = (uint16_t)(bc + 1);
                 uint16_t dataAddr = bc; // address of the inline character data itself
                 PushStackWord(dataAddr);
@@ -3398,7 +3407,7 @@ void PSystemEngine::RunLoop() {
                             // address of the string), then advance BC past
                             // the string (length byte + 'length' chars).
                 uint16_t ipc = m_cpu.r.BC();
-                uint8_t strLen = m_mem[ipc];
+                uint8_t strLen = PM_CODE8(ipc);
                 // After INC BC the low byte of IPC becomes (ipc+1)&0xFF.
                 // ADD A,C uses that new C; carry propagates into B via ADC.
                 uint8_t cAfterInc = (uint8_t)((ipc + 1) & 0xFF);
@@ -3420,7 +3429,7 @@ void PSystemEngine::RunLoop() {
                             // to Z80 (at 0x0640 = $99) only on the error path
                             // where the source is longer than MAXLEN.
                 uint16_t bc = m_cpu.r.BC();
-                uint8_t maxlen = m_mem[bc];
+                uint8_t maxlen = PM_CODE8(bc);
                 m_mem[PM_V(0x02A0)] = maxlen;                         // MAXLEN = BYTE1
                 bc = (uint16_t)(bc + 1);
                 m_cpu.r.setBC(bc);
@@ -3590,7 +3599,7 @@ void PSystemEngine::RunLoop() {
                 uint16_t newProcEntryAddr = m_cpu.r.BC();
                 uint16_t newMP   = (uint16_t)(m_mem[PM_V(0x02F2)] | (m_mem[PM_V(0x02F3)] << 8));
                 uint16_t newJtab = (uint16_t)(m_mem[PM_V(0x02F4)] | (m_mem[PM_V(0x02F5)] << 8));
-                uint8_t calledLexLevel = m_mem[(uint16_t)(newJtab + 1)];
+                uint8_t calledLexLevel = PM_CODE8((uint16_t)(newJtab + 1));
 
                 if (((uint8_t)(calledLexLevel - 1) & 0x80) != 0) { // CIPXNL: DEC A; JP P -- base-level proc
                     // Base-level called procedure: identical CBPXNL logic to CBP.
@@ -3623,7 +3632,7 @@ void PSystemEngine::RunLoop() {
                         uint16_t frameJtab = (uint16_t)(m_mem[(uint16_t)(examineAddr + 4)] | (m_mem[(uint16_t)(examineAddr + 5)] << 8));
                         uint16_t frameDyn  = (uint16_t)(m_mem[(uint16_t)(examineAddr + 2)] | (m_mem[(uint16_t)(examineAddr + 3)] << 8));
                         result = frameDyn; // BC gets updated to msdyn WITHIN this same iteration
-                        uint8_t creatorLexLevel = m_mem[(uint16_t)(frameJtab + 1)];
+                        uint8_t creatorLexLevel = PM_CODE8((uint16_t)(frameJtab + 1));
                         if (creatorLexLevel == targetLexLevel) { found = true; break; }
                         examineAddr = frameDyn;
                     }
@@ -3885,9 +3894,9 @@ void PSystemEngine::RunLoop() {
                             // affect correctness and are gated behind
                             // m_preserveZ80RegisterCompat.
                 uint16_t bc = m_cpu.r.BC();
-                uint8_t elementsPerWord = m_mem[bc];
+                uint8_t elementsPerWord = PM_CODE8(bc);
                 bc = (uint16_t)(bc + 1);
-                uint8_t bitsPerElement = m_mem[bc];
+                uint8_t bitsPerElement = PM_CODE8(bc);
                 bc = (uint16_t)(bc + 1);
                 if (m_preserveZ80RegisterCompat) m_cpu.r.setBC(bc); // purely cosmetic: SAVIPC below
                                                   // uses the local bc directly, and BACK1 restores
@@ -3929,7 +3938,7 @@ void PSystemEngine::RunLoop() {
                             // of one declared size to a variable of a
                             // different declared size.
                 uint16_t bc = m_cpu.r.BC();
-                uint8_t szFinalW = m_mem[bc]; // szfinal, in words
+                uint8_t szFinalW = PM_CODE8(bc); // szfinal, in words
                 bc = (uint16_t)(bc + 1);
                 m_cpu.r.setBC(bc);
                 uint16_t szOrigW = PopStackWord(); // szorig, in words (popped)
@@ -4044,7 +4053,7 @@ void PSystemEngine::RunLoop() {
                             // whatever consumes it. Used for multi-word
                             // values like sets and reals.
                 uint16_t bc = m_cpu.r.BC();
-                uint8_t numWords = m_mem[bc]; // count byte -- note: the real code
+                uint8_t numWords = PM_CODE8(bc); // count byte -- note: the real code
                                                 // does not explicitly advance BC past
                                                 // this byte; the word-boundary
                                                 // rounding below accounts for it.
@@ -4060,7 +4069,7 @@ void PSystemEngine::RunLoop() {
                 uint16_t de = 0;
                 uint8_t b = numWords;
                 do { // matches DJNZ's own "always run once, then check" semantics
-                    de = (uint16_t)(m_mem[hl] | (m_mem[(uint16_t)(hl + 1)] << 8));
+                    de = PM_CODE16(hl);
                     hl = (uint16_t)(hl + 2);
                     PushStackWord(de);
                     b = (uint8_t)(b - 1);
@@ -4358,7 +4367,7 @@ void PSystemEngine::RunLoop() {
                             // RBP and the linux-harness copies.
                 uint16_t mpd0Val = (uint16_t)(m_mem[PM_V(0x0242)] | (m_mem[PM_V(0x0243)] << 8));
                 uint16_t oldSP = (uint16_t)(m_mem[mpd0Val] | (m_mem[(uint16_t)(mpd0Val + 1)] << 8));
-                uint8_t numWords = m_mem[m_cpu.r.BC()]; // peek only -- BC is about
+                uint8_t numWords = PM_CODE8(m_cpu.r.BC()); // peek only -- BC is about
                                                           // to be entirely replaced
                                                           // below, so the real code
                                                           // never advances past this
@@ -4438,7 +4447,7 @@ void PSystemEngine::RunLoop() {
                 // via the trace-diff: with the naive (wrong) mapping, type=4
                 // was being treated as BOOLC (a simple bit-0 compare) when
                 // the operands were actually STRGC string pointers.
-                uint8_t typeCode = m_mem[m_cpu.r.BC()]; // peek only until a type is confirmed handled
+                uint8_t typeCode = PM_CODE8(m_cpu.r.BC()); // peek only until a type is confirmed handled
                 if (typeCode == 6) { // BOOLC: "LD A,E;AND 1;LD E,A;LD A,L;AND 1;CP E" --
                                       // A ends up = a's masked bit0; D is never
                                       // touched (retains b's original high byte),
@@ -4549,7 +4558,7 @@ void PSystemEngine::RunLoop() {
                             // with every "equal ? 1 : 0" inverted to
                             // "equal ? 0 : 1". REALC and POWRC are, same
                             // as CEQU, not natively handled.
-                uint8_t typeCode = m_mem[m_cpu.r.BC()]; // peek only until a type is confirmed handled
+                uint8_t typeCode = PM_CODE8(m_cpu.r.BC()); // peek only until a type is confirmed handled
                 if (typeCode == 6) { // BOOLC
                     m_cpu.r.setBC((uint16_t)(m_cpu.r.BC() + 1));
                     m_mem[PM_V(0x0246)] = m_cpu.r.BC() & 0xFF; m_mem[PM_V(0x0247)] = m_cpu.r.BC() >> 8; // SAVIPC
@@ -4744,7 +4753,7 @@ void PSystemEngine::RunLoop() {
                             // jump-table case can fall through to the real
                             // Z80 code completely untouched.
                 uint16_t boolValue = PeekStackWord(0);
-                uint8_t ofs = m_mem[m_cpu.r.BC()];
+                uint8_t ofs = PM_CODE8(m_cpu.r.BC());
                 if ((boolValue & 1) != 0) {
                     // TRUE: don't jump, just skip the 1-byte operand.
                     // Real code (NOJ) never touches DE/HL, but "POP AF"
@@ -4775,7 +4784,7 @@ void PSystemEngine::RunLoop() {
                     PopStackWord();                                     // the false boolean
                     uint16_t jtab = (uint16_t)(m_mem[PM_V(0x02F4)] | (m_mem[PM_V(0x02F5)] << 8));
                     uint16_t entry = (uint16_t)(jtab + ofs - 256);
-                    uint16_t rel = (uint16_t)(m_mem[entry] | (m_mem[(uint16_t)(entry + 1)] << 8));
+                    uint16_t rel = PM_CODE16(entry);
                     uint16_t target = (uint16_t)(entry - rel);
                     m_cpu.r.setBC(target);
                     if (m_preserveZ80RegisterCompat) { m_cpu.r.A = ofs; m_cpu.r.setDE(rel); m_cpu.r.setHL(target); }
@@ -4800,7 +4809,7 @@ void PSystemEngine::RunLoop() {
         // here, since these opcodes' top bit is clear, so ADD A,A never
         // sets carry) is just A>>1, so that's all "undoing" it takes.
         if (m_nativePcodeOps && m_cpu.r.PC == 0x03AB) {
-            uint8_t doubled = (uint8_t)(m_mem[(uint16_t)(m_cpu.r.BC() - 1)] << 1); // recomputed fresh -- BC always points past the opcode byte, regardless of whether the shortcut fired for THIS dispatch
+            uint8_t doubled = (uint8_t)(PM_CODE8((uint16_t)(m_cpu.r.BC() - 1)) << 1); // recomputed fresh -- BC always points past the opcode byte, regardless of whether the shortcut fired for THIS dispatch
             uint8_t original = (uint8_t)(doubled >> 1); // matches real RRA exactly (carry-in always 0 here)
             PushStackWord(original);
             if (m_preserveZ80RegisterCompat) {
@@ -4820,7 +4829,7 @@ void PSystemEngine::RunLoop() {
         // value, producing a byte displacement into the local/frame area
         // (based at MPD0, 0x0242) without needing to un-double A at all.
         if (m_nativePcodeOps && m_cpu.r.PC == 0x047C) {
-            uint8_t doubled = (uint8_t)(m_mem[(uint16_t)(m_cpu.r.BC() - 1)] << 1); // recomputed fresh -- BC always points past the opcode byte, regardless of whether the shortcut fired for THIS dispatch
+            uint8_t doubled = (uint8_t)(PM_CODE8((uint16_t)(m_cpu.r.BC() - 1)) << 1); // recomputed fresh -- BC always points past the opcode byte, regardless of whether the shortcut fired for THIS dispatch
             uint8_t displacement = (uint8_t)(doubled + 0x52);
             uint16_t mpd0 = (uint16_t)(m_mem[PM_V(0x0242)] | (m_mem[PM_V(0x0243)] << 8));
             uint16_t addr = (uint16_t)(mpd0 + displacement);
@@ -4840,7 +4849,7 @@ void PSystemEngine::RunLoop() {
         // (based at BASED0, 0x0244) instead of the local/frame area, and
         // a different additive constant (0x32).
         if (m_nativePcodeOps && m_cpu.r.PC == 0x04B6) {
-            uint8_t doubled = (uint8_t)(m_mem[(uint16_t)(m_cpu.r.BC() - 1)] << 1); // recomputed fresh -- BC always points past the opcode byte, regardless of whether the shortcut fired for THIS dispatch
+            uint8_t doubled = (uint8_t)(PM_CODE8((uint16_t)(m_cpu.r.BC() - 1)) << 1); // recomputed fresh -- BC always points past the opcode byte, regardless of whether the shortcut fired for THIS dispatch
             uint8_t displacement = (uint8_t)(doubled + 0x32);
             uint16_t based0 = (uint16_t)(m_mem[PM_V(0x0244)] | (m_mem[PM_V(0x0245)] << 8));
             uint16_t addr = (uint16_t)(based0 + displacement);
@@ -4863,7 +4872,7 @@ void PSystemEngine::RunLoop() {
         // (0xF8, index=0) is the trivial special case, already handled
         // separately above as a plain load-indirect with no offset.
         if (m_nativePcodeOps && m_cpu.r.PC == 0x053C) {
-            uint8_t doubled = (uint8_t)(m_mem[(uint16_t)(m_cpu.r.BC() - 1)] << 1); // recomputed fresh -- BC always points past the opcode byte, regardless of whether the shortcut fired for THIS dispatch
+            uint8_t doubled = (uint8_t)(PM_CODE8((uint16_t)(m_cpu.r.BC() - 1)) << 1); // recomputed fresh -- BC always points past the opcode byte, regardless of whether the shortcut fired for THIS dispatch
             uint8_t displacement = (uint8_t)(doubled + 0x10);
             uint16_t base = PopStackWord();
             uint16_t addr = (uint16_t)(base + displacement);

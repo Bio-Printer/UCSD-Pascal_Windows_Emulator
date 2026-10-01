@@ -12,7 +12,7 @@
 // caller's segment exactly as in the same-segment case.
 uint8_t segRetA = (uint8_t)(curSegP >> 8);
 if (newSegCandidate != curSegP) {
-    uint8_t  drSeg = PM_MEM[curSegP];
+    uint8_t  drSeg = PM_CODE8(curSegP);                              // segment number: first byte of its procedure dictionary
     uint16_t drHi  = (uint16_t)(PM_V(0x0251) + (uint16_t)drSeg * 4);            // LD BC,INTSEGT+1; ADD HL,BC
     uint16_t drLo  = (uint16_t)((drHi & 0xFF00) | ((drHi - 1) & 0x00FF)); // DEC L (8-bit, as the real code)
     uint16_t drCnt = (uint16_t)(((PM_MEM[drHi] << 8) | PM_MEM[drLo]) - 1); // DEC BC

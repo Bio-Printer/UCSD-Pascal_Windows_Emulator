@@ -33,7 +33,7 @@ if (procNum == 138) {
     m_cpu.r.setBC(cxIpc1);
     m_mem[PM_V(0x0246)] = cxIpc1 & 0xFF; m_mem[PM_V(0x0247)] = cxIpc1 >> 8;                 // SAVIPC
     m_opcodeEmulatedCount[OP_CSP]++;
-    if (segNum != m_mem[segp]) {
+    if (segNum != PM_CODE8(segp)) {
         // Another segment: CXP's own code (NativeCxp.inc).
 #define CXP_POST cxPostCalli
 #include "NativeCxp.inc"
@@ -56,7 +56,7 @@ if (procNum == 138) {
         const uint16_t newProcEntryAddr = m_cpu.r.BC();
         const uint16_t newMP   = (uint16_t)(m_mem[PM_V(0x02F2)] | (m_mem[PM_V(0x02F3)] << 8));
         const uint16_t newJtab = (uint16_t)(m_mem[PM_V(0x02F4)] | (m_mem[PM_V(0x02F5)] << 8));
-        const uint8_t calledLexLevel = m_mem[(uint16_t)(newJtab + 1)];
+        const uint8_t calledLexLevel = PM_CODE8((uint16_t)(newJtab + 1));
         if (((uint8_t)(calledLexLevel - 1) & 0x80) != 0) {            // base-level procedure: CBPXNL
             const uint16_t oldBASE = (uint16_t)(m_mem[PM_V(0x02F0)] | (m_mem[PM_V(0x02F1)] << 8));
             const uint16_t newMPD0 = (uint16_t)(m_mem[PM_V(0x0242)] | (m_mem[PM_V(0x0243)] << 8));
@@ -77,7 +77,7 @@ if (procNum == 138) {
                 const uint16_t frameJtab = (uint16_t)(m_mem[(uint16_t)(examineAddr + 4)] | (m_mem[(uint16_t)(examineAddr + 5)] << 8));
                 const uint16_t frameDyn  = (uint16_t)(m_mem[(uint16_t)(examineAddr + 2)] | (m_mem[(uint16_t)(examineAddr + 3)] << 8));
                 result = frameDyn;
-                if (m_mem[(uint16_t)(frameJtab + 1)] == targetLexLevel) { found = true; break; }
+                if (PM_CODE8((uint16_t)(frameJtab + 1)) == targetLexLevel) { found = true; break; }
                 examineAddr = frameDyn;
             }
             if (!found) {                                             // not reachable for compiler-generated code:

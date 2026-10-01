@@ -4,7 +4,7 @@
 // and pushes 1 or 0 exactly as the Z80 REALC routine and the comparison
 // routines do (PmRealCompare, PCodeOpcodes.h -- checked against the real Z80
 // routines by linux-harness/fptest.cpp).
-if (!PM_PRESERVE && PM_MEM[PM_CPU.r.BC()] == 2) {
+if (!PM_PRESERVE && PM_CODE8(PM_CPU.r.BC()) == 2) {
     const uint8_t rcOp = (uint8_t)nativeOpcodeLookup;
     const uint16_t rcIpc = (uint16_t)(PM_CPU.r.BC() + 1);      // past the type byte (CSETUP's SAVIPC)
     const uint16_t rcSp = PM_CPU.r.SP;

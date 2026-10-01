@@ -80,10 +80,10 @@ do {
         PM_CPU.r.setBC(cxBc2);
         cxWr(PM_V(0x0246), cxBc2);
         uint16_t tAddr = (uint16_t)(cxNewSeg - (uint16_t)(cxProc * 2));
-        uint16_t jtab  = (uint16_t)(tAddr - cxRd(tAddr));
+        uint16_t jtab  = (uint16_t)(tAddr - PM_CODE16(tAddr));
         cxWr(PM_V(0x02CC), jtab);                                       // NEWJTB
-        uint16_t datasz = cxRd((uint16_t)(jtab - 8));
-        uint16_t parmsz = cxRd((uint16_t)(jtab - 6));
+        uint16_t datasz = PM_CODE16((uint16_t)(jtab - 8));
+        uint16_t parmsz = PM_CODE16((uint16_t)(jtab - 6));
         uint16_t sp = (uint16_t)(PM_CPU.r.SP - datasz - parmsz); // $50: extend by datasz+parmsz
         uint16_t src = (uint16_t)(cxNewSeg + 2);                  // params sit just above the segment
         for (uint16_t i = 0; i < parmsz; i++) PM_MEM[(uint16_t)(sp + i)] = PM_MEM[(uint16_t)(src + i)];
@@ -99,7 +99,7 @@ do {
         cxWr(PM_V(0x0242), (uint16_t)(cxNewMP + 10));                   // MPD0
         cxWr(PM_V(0x02F6), cxNewSeg);                                   // SEGP
         cxWr(PM_V(0x02F4), jtab);                                       // JTAB
-        uint16_t eRef = (uint16_t)(jtab - 2), eSval = cxRd(eRef);
+        uint16_t eRef = (uint16_t)(jtab - 2), eSval = PM_CODE16(eRef);
         PM_CPU.r.setBC((uint16_t)(eRef - eSval));                 // entry point
         if (PM_PRESERVE) {
             uint8_t carry = ((eRef & 0xFF) < (eSval & 0xFF)) ? 1 : 0;
@@ -120,9 +120,9 @@ do {
     uint16_t cxBc1   = cxIpc1;                    // IPC past seg_num (CXP: points at proc_num)
     uint8_t  cxProc  = cxProcN;
     uint16_t cxTAddr = (uint16_t)(cxNewSeg - (uint16_t)(cxProc * 2));
-    uint16_t cxJtab  = (uint16_t)(cxTAddr - cxRd(cxTAddr));
-    if (PM_MEM[cxJtab] == 0) { cxWhy = 2; break; } // assembly procedure: stays Z80
-    uint16_t cxDatasz = cxRd((uint16_t)(cxJtab - 8));
+    uint16_t cxJtab  = (uint16_t)(cxTAddr - PM_CODE16(cxTAddr));
+    if (PM_CODE8(cxJtab) == 0) { cxWhy = 2; break; } // assembly procedure: stays Z80
+    uint16_t cxDatasz = PM_CODE16((uint16_t)(cxJtab - 8));
     if ((uint16_t)(PM_CPU.r.SP - cxDatasz - 12 - 60) < cxRd(PM_V(0x0240))) { cxWhy = 1; break; } // STKOVR: stays Z80
 
     // ---- commit ----
@@ -142,7 +142,7 @@ do {
     {
 
     uint16_t cxEntry = PM_CPU.r.BC();
-    uint8_t  cxLex   = PM_MEM[(uint16_t)(cxRd(PM_V(0x02F4)) + 1)];
+    uint8_t  cxLex   = PM_CODE8((uint16_t)(cxRd(PM_V(0x02F4)) + 1));
     uint8_t  cxLexM1 = (uint8_t)(cxLex - 1);        // CIPXNL: LD A,(lex); DEC A; JP P,$10
     bool cxBaseStyle = (segNum == 0) || (cxLexM1 & 0x80) != 0; // CBPXNL directly, or CIPXNL's base-level branch
     if (cxBaseStyle) {
@@ -165,7 +165,7 @@ do {
             uint16_t fJtab = cxRd((uint16_t)(examine + 4));
             uint16_t fDyn  = cxRd((uint16_t)(examine + 2));
             result = fDyn;
-            if (PM_MEM[(uint16_t)(fJtab + 1)] == target) { found = true; break; }
+            if (PM_CODE8((uint16_t)(fJtab + 1)) == target) { found = true; break; }
             examine = fDyn;
         }
         if (!found) {                             // (not reachable: the search covers any possible chain)

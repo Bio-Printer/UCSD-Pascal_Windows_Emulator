@@ -34,6 +34,8 @@ struct SegLoadPlan {
 };
 auto slRd   = [&](uint16_t a) -> uint16_t { return (uint16_t)(PM_MEM[a] | (PM_MEM[(uint16_t)(a + 1)] << 8)); };
 auto slWr   = [&](uint16_t a, uint16_t v) { PM_MEM[a] = (uint8_t)(v & 0xFF); PM_MEM[(uint16_t)(a + 1)] = (uint8_t)(v >> 8); };
+auto slCRd  = [&](uint16_t a) -> uint16_t { return PM_CODE16(a); };      // code: the segment being loaded
+auto slCWr  = [&](uint16_t a, uint16_t v) { PM_CODEW8(a, v & 0xFF); PM_CODEW8((uint16_t)(a + 1), v >> 8); };
 auto slDecL = [](uint16_t a) -> uint16_t { return (uint16_t)((a & 0xFF00) | ((a - 1) & 0x00FF)); };
 auto slIncL = [](uint16_t a) -> uint16_t { return (uint16_t)((a & 0xFF00) | ((a + 1) & 0x00FF)); };
 
@@ -117,20 +119,20 @@ auto slError = [&](SegLoadPlan& p, int kind, uint16_t getsegRet) -> uint16_t {
         PM_MEM[PM_V(0x02E4)] = PortIn(0xCF);                // status -> IORSLT
         return 0x0408;                                // JP NZ,SYIOER
     }
-    for (uint16_t i = 0; i < p.len; i++) PM_MEM[(uint16_t)(p.segbot + i)] = p.image[i];   // read in
+    for (uint16_t i = 0; i < p.len; i++) PM_CODEW8((uint16_t)(p.segbot + i), p.image[i]);   // read in
     return 0x03DF;                                    // wrong segment: JP NZ,NOPROC
 };
 
 auto slRlList = [&](uint16_t de, uint16_t delta) -> uint16_t {   // RLLIST; returns HL = ^last node
     slWr(PM_V(0x02C4), delta);                                            // RLDELTA
     uint16_t h = (uint16_t)(de - 1);
-    uint8_t b = PM_MEM[h]; h = slDecL(h); uint8_t c = PM_MEM[h];
+    uint8_t b = PM_CODE8(h); h = slDecL(h); uint8_t c = PM_CODE8(h);
     uint16_t n = (uint16_t)((b << 8) | c);
     while (n != 0) {
         h = (uint16_t)(h - 1);
-        uint8_t d = PM_MEM[h]; h = slDecL(h);
-        uint16_t tgt = (uint16_t)(h - (uint16_t)((d << 8) | PM_MEM[h]));
-        slWr(tgt, (uint16_t)(slRd(tgt) + delta));
+        uint8_t d = PM_CODE8(h); h = slDecL(h);
+        uint16_t tgt = (uint16_t)(h - (uint16_t)((d << 8) | PM_CODE8(h)));
+        slCWr(tgt, (uint16_t)(slCRd(tgt) + delta));
         n = (uint16_t)(n - 1);
     }
     return h;
@@ -142,7 +144,7 @@ auto slCommit = [&](SegLoadPlan& p) {
     slWr(PM_V(0x02C8), p.segtp);             // SEGTP
     slWr(PM_V(0x02CA), p.newseg);            // NEWSEG
     slWr(PM_V(0x02BC), p.segbot);            // SEGBOT
-    for (uint16_t i = 0; i < p.len; i++) PM_MEM[(uint16_t)(p.segbot + i)] = p.image[i];
+    for (uint16_t i = 0; i < p.len; i++) PM_CODEW8((uint16_t)(p.segbot + i), p.image[i]);
     slWr(PM_V(0x02E4), 0);                   // IORSLT := 0 (GETU; SYSRD success)
     // SYSRD -> SYSIO / GETU parameter-space writes (later Z80 I/O code can
     // pick up leftovers from these, so they matter for register fidelity):
@@ -158,15 +160,15 @@ auto slCommit = [&](SegLoadPlan& p) {
 
     // GSGREAD: relocation base from the segment's procedure 1
     uint16_t a = (uint16_t)(p.newseg - 1);
-    uint8_t d = PM_MEM[a]; a = slDecL(a);
-    uint16_t j1 = (uint16_t)(a - (uint16_t)((d << 8) | PM_MEM[a]));
+    uint8_t d = PM_CODE8(a); a = slDecL(a);
+    uint16_t j1 = (uint16_t)(a - (uint16_t)((d << 8) | PM_CODE8(a)));
     uint16_t rlbase;
-    if (PM_MEM[j1] == 0 || PM_MEM[(uint16_t)(j1 + 1)] != 0) {
+    if (PM_CODE8(j1) == 0 || PM_CODE8((uint16_t)(j1 + 1)) != 0) {
         rlbase = slRd(PM_V(0x02F0));                               // $05: current BASE
     } else {                                                 // $10: what BASE will be
         uint16_t q = (uint16_t)(j1 + 1 - 6);
-        uint8_t pd = PM_MEM[q]; q = slDecL(q); uint8_t pe = PM_MEM[q];
-        q = (uint16_t)(q - 1); uint8_t db = PM_MEM[q]; q = slDecL(q); uint8_t dc = PM_MEM[q];
+        uint8_t pd = PM_CODE8(q); q = slDecL(q); uint8_t pe = PM_CODE8(q);
+        q = (uint16_t)(q - 1); uint8_t db = PM_CODE8(q); q = slDecL(q); uint8_t dc = PM_CODE8(q);
         uint16_t sum = (uint16_t)((uint16_t)((pd << 8) | pe) + (uint16_t)((db << 8) | dc) + 12);
         rlbase = (uint16_t)(PM_CPU.r.SP - sum);
     }
@@ -175,19 +177,19 @@ auto slCommit = [&](SegLoadPlan& p) {
     // RLSEG: every assembly procedure gets its entric made absolute and its
     // base-, segment- and proc-relative lists relocated
     uint16_t h = slIncL(p.newseg);
-    uint8_t procs = PM_MEM[h];
+    uint8_t procs = PM_CODE8(h);
     h = slDecL(h);
     do {
         h = (uint16_t)(h - 1);
-        uint8_t dd = PM_MEM[h]; h = slDecL(h);
-        uint16_t jt = (uint16_t)(h - (uint16_t)((dd << 8) | PM_MEM[h]));
+        uint8_t dd = PM_CODE8(h); h = slDecL(h);
+        uint16_t jt = (uint16_t)(h - (uint16_t)((dd << 8) | PM_CODE8(h)));
         uint16_t saved = h;
-        if (PM_MEM[jt] == 0) {
+        if (PM_CODE8(jt) == 0) {
             uint16_t e = slDecL((uint16_t)(jt - 1));
             uint16_t e1 = slIncL(e);
-            uint16_t absEntry = (uint16_t)(e - (uint16_t)((PM_MEM[e1] << 8) | PM_MEM[e]));
-            PM_MEM[e] = (uint8_t)(absEntry & 0xFF);
-            PM_MEM[e1] = (uint8_t)(absEntry >> 8);
+            uint16_t absEntry = (uint16_t)(e - (uint16_t)((PM_CODE8(e1) << 8) | PM_CODE8(e)));
+            PM_CODEW8(e, absEntry & 0xFF);
+            PM_CODEW8(e1, absEntry >> 8);
             slWr(PM_V(0x02C2), absEntry);                           // PROCBOT
             uint16_t last = slRlList(e, rlbase);              // base-relative
             last = slRlList(last, p.segbot);                  // segment-relative

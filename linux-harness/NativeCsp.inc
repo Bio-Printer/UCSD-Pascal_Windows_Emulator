@@ -59,12 +59,12 @@ if (!PM_PRESERVE) {
         case 4: {  // EXIT(seg_num, proc_num): rewrite MSIPCs up the dynamic chain
             uint16_t procW = PeekStackWord(0), segW = PeekStackWord(2);
             uint8_t pn = (uint8_t)procW, sn = (uint8_t)segW;
-            auto exitOf = [&](uint16_t jt) -> uint16_t { uint16_t q = (uint16_t)(jt - 4); return (uint16_t)(q - csRd(q)); };
+            auto exitOf = [&](uint16_t jt) -> uint16_t { uint16_t q = (uint16_t)(jt - 4); return (uint16_t)(q - PM_CODE16(q)); };
             uint16_t jt0 = csRd(PM_V(0x02F4));
             uint16_t ipcsav = exitOf(jt0);
             std::vector<std::pair<uint16_t,uint16_t>> msipcWrites;
             uint16_t sys = 0;
-            bool inChain = !(PM_MEM[jt0] == pn && PM_MEM[csRd(PM_V(0x02F6))] == sn);
+            bool inChain = !(PM_CODE8(jt0) == pn && PM_CODE8(csRd(PM_V(0x02F6))) == sn);
             bool noExit = false;
             if (inChain) {
                 sys = csRd(csRd(PM_V(0x02F0)));                    // ^PASCALSYSTEM's MSCW
@@ -74,7 +74,7 @@ if (!PM_PRESERVE) {
                     if (c == sys) break;                     // reached PASCALSYSTEM's MSCW: NOEXIT
                     uint16_t pj = csRd((uint16_t)(c + 4));
                     msipcWrites.push_back({ (uint16_t)(c + 8), exitOf(pj) });
-                    if (PM_MEM[pj] == pn && PM_MEM[csRd((uint16_t)(c + 6))] == sn) { ok = true; break; }
+                    if (PM_CODE8(pj) == pn && PM_CODE8(csRd((uint16_t)(c + 6))) == sn) { ok = true; break; }
                     c = csRd((uint16_t)(c + 2));
                 }
                 if (!ok) noExit = true;   // the Z80 EXIT has done every write below by then
