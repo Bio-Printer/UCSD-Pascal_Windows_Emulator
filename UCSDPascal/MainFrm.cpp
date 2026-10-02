@@ -882,13 +882,63 @@ void CMainFrame::OnFileExit() {
 // ---------------------------------------------------------------------------
 
 // The image file's full path goes after a tab: Windows shows it in the menu's
-// right-hand column (where "Alt+F4" is), so the paths line up and the menu is
-// as wide as the longest one. '&' in a path is doubled (not a mnemonic).
+// right-hand column (where "Alt+F4" is), so the menu is as wide as the longest
+// path. That column is always right-aligned, so each path is padded on the
+// right to the width of the longest one (see MenuPath) and they all start at
+// the same place. '&' in a path is doubled (not a mnemonic).
 static CString MenuPathSuffix(const std::wstring& path) {
     if (path.empty()) return CString();
     CString p(path.c_str());
     p.Replace(L"&", L"&&");
     return CString(L"\t") + p;
+}
+
+// Width of s in the menu font, in pixels.
+static int MenuTextWidth(const std::wstring& s) {
+    static HFONT font = nullptr;
+    if (!font) {
+        NONCLIENTMETRICSW ncm = { sizeof(ncm) };
+        if (SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, sizeof(ncm), &ncm, 0))
+            font = CreateFontIndirectW(&ncm.lfMenuFont);
+        if (!font) font = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
+    }
+    HDC dc = GetDC(nullptr);
+    HGDIOBJ old = SelectObject(dc, font);
+    SIZE sz = {};
+    GetTextExtentPoint32W(dc, s.c_str(), (int)s.size(), &sz);
+    SelectObject(dc, old);
+    ReleaseDC(nullptr, dc);
+    return sz.cx;
+}
+
+// The path of the image on a unit, padded on the right with spaces, then hair
+// spaces (U+200A, about a pixel each), to the width of the longest path shown
+// in the File menu, so the right-aligned path column reads as left-aligned.
+std::wstring CMainFrame::MenuPath(int unit) const {
+    std::wstring path = UnitImagePath(unit);
+    if (path.empty()) return path;
+    static const int units[] = { 4, 5, 9, 10, 11, 12, 13, 14 };
+    int widest = 0;
+    for (int u : units) {
+        std::wstring p = UnitImagePath(u);
+        if (p.empty() || m_engine->GetVolumeNameForUnit(u).empty()) continue;
+        int w = MenuTextWidth(p);
+        if (w > widest) widest = w;
+    }
+    int gap = widest - MenuTextWidth(path);
+    int space = MenuTextWidth(L" "), hair = MenuTextWidth(L"\x200A");
+    if (gap <= 0) return path;
+    if (space > 0 && hair > 0) {        // end in a hair space, in case trailing spaces are trimmed
+        int n = (gap - 1) / space;
+        path.append(n, L' ');
+        gap -= n * space;
+    }
+    if (hair > 0) {
+        int n = (gap + hair / 2) / hair;
+        path.append(n > 1 ? n : 1, L'\x200A');
+    }
+    else if (space > 0) path.append((gap + space / 2) / space, L' ');
+    return path;
 }
 
 static void SetFileMenuLabel(CCmdUI* pCmdUI, int unit, const wchar_t* accel,
@@ -918,28 +968,28 @@ std::wstring CMainFrame::UnitImagePath(int unit) const {
 }
 
 void CMainFrame::OnUpdateFileOpenBigDisk(CCmdUI* p) {
-    SetFileMenuLabel(p, 4, L"&4", m_engine.get(), UnitImagePath(4));
+    SetFileMenuLabel(p, 4, L"&4", m_engine.get(), MenuPath(4));
 }
 void CMainFrame::OnUpdateFileOpenScratch(CCmdUI* p) {
-    SetFileMenuLabel(p, 5, L"&5", m_engine.get(), UnitImagePath(5));
+    SetFileMenuLabel(p, 5, L"&5", m_engine.get(), MenuPath(5));
 }
 void CMainFrame::OnUpdateFileOpenUnit9(CCmdUI* p) {
-    SetFileMenuLabel(p, 9, L"&9", m_engine.get(), UnitImagePath(9));
+    SetFileMenuLabel(p, 9, L"&9", m_engine.get(), MenuPath(9));
 }
 void CMainFrame::OnUpdateFileOpenUnit10(CCmdUI* p) {
-    SetFileMenuLabel(p, 10, L"1&0", m_engine.get(), UnitImagePath(10));
+    SetFileMenuLabel(p, 10, L"1&0", m_engine.get(), MenuPath(10));
 }
 void CMainFrame::OnUpdateFileOpenUnit11(CCmdUI* p) {
-    SetFileMenuLabel(p, 11, L"1&1", m_engine.get(), UnitImagePath(11));
+    SetFileMenuLabel(p, 11, L"1&1", m_engine.get(), MenuPath(11));
 }
 void CMainFrame::OnUpdateFileOpenUnit12(CCmdUI* p) {
-    SetFileMenuLabel(p, 12, L"1&2", m_engine.get(), UnitImagePath(12));
+    SetFileMenuLabel(p, 12, L"1&2", m_engine.get(), MenuPath(12));
 }
 void CMainFrame::OnUpdateFileOpenUnit13(CCmdUI* p) {
-    SetFileMenuLabel(p, 13, L"1&3", m_engine.get(), UnitImagePath(13));
+    SetFileMenuLabel(p, 13, L"1&3", m_engine.get(), MenuPath(13));
 }
 void CMainFrame::OnUpdateFileOpenUnit14(CCmdUI* p) {
-    SetFileMenuLabel(p, 14, L"1&4", m_engine.get(), UnitImagePath(14));
+    SetFileMenuLabel(p, 14, L"1&4", m_engine.get(), MenuPath(14));
 }
 
 // ---------------------------------------------------------------------------
@@ -1060,14 +1110,14 @@ static void SetUnmountLabel(CCmdUI* pCmdUI, int unit, PSystemEngine* engine, con
     if (loaded) text += MenuPathSuffix(path);
     pCmdUI->SetText(text);
 }
-void CMainFrame::OnUpdateFileUnmount4(CCmdUI*  p) { SetUnmountLabel(p, 4,  m_engine.get(), UnitImagePath(4)); }
-void CMainFrame::OnUpdateFileUnmount5(CCmdUI*  p) { SetUnmountLabel(p, 5,  m_engine.get(), UnitImagePath(5)); }
-void CMainFrame::OnUpdateFileUnmount9(CCmdUI*  p) { SetUnmountLabel(p, 9,  m_engine.get(), UnitImagePath(9)); }
-void CMainFrame::OnUpdateFileUnmount10(CCmdUI* p) { SetUnmountLabel(p, 10, m_engine.get(), UnitImagePath(10)); }
-void CMainFrame::OnUpdateFileUnmount11(CCmdUI* p) { SetUnmountLabel(p, 11, m_engine.get(), UnitImagePath(11)); }
-void CMainFrame::OnUpdateFileUnmount12(CCmdUI* p) { SetUnmountLabel(p, 12, m_engine.get(), UnitImagePath(12)); }
-void CMainFrame::OnUpdateFileUnmount13(CCmdUI* p) { SetUnmountLabel(p, 13, m_engine.get(), UnitImagePath(13)); }
-void CMainFrame::OnUpdateFileUnmount14(CCmdUI* p) { SetUnmountLabel(p, 14, m_engine.get(), UnitImagePath(14)); }
+void CMainFrame::OnUpdateFileUnmount4(CCmdUI*  p) { SetUnmountLabel(p, 4,  m_engine.get(), MenuPath(4)); }
+void CMainFrame::OnUpdateFileUnmount5(CCmdUI*  p) { SetUnmountLabel(p, 5,  m_engine.get(), MenuPath(5)); }
+void CMainFrame::OnUpdateFileUnmount9(CCmdUI*  p) { SetUnmountLabel(p, 9,  m_engine.get(), MenuPath(9)); }
+void CMainFrame::OnUpdateFileUnmount10(CCmdUI* p) { SetUnmountLabel(p, 10, m_engine.get(), MenuPath(10)); }
+void CMainFrame::OnUpdateFileUnmount11(CCmdUI* p) { SetUnmountLabel(p, 11, m_engine.get(), MenuPath(11)); }
+void CMainFrame::OnUpdateFileUnmount12(CCmdUI* p) { SetUnmountLabel(p, 12, m_engine.get(), MenuPath(12)); }
+void CMainFrame::OnUpdateFileUnmount13(CCmdUI* p) { SetUnmountLabel(p, 13, m_engine.get(), MenuPath(13)); }
+void CMainFrame::OnUpdateFileUnmount14(CCmdUI* p) { SetUnmountLabel(p, 14, m_engine.get(), MenuPath(14)); }
 
 // ---------------------------------------------------------------------------
 // Trace logging options dialog

@@ -133,6 +133,7 @@ private:
     std::wstring m_pascalBinPath, m_bigDiskPath, m_scratchDiskPath;
     std::wstring m_unit9Path, m_unit10Path, m_unit11Path, m_unit12Path, m_unit13Path, m_unit14Path;
     std::wstring UnitImagePath(int unit) const;   // the image file mounted on a unit (File menu labels)
+    std::wstring MenuPath(int unit) const;        // UnitImagePath padded so the menu's paths line up on the left
 
     CFont m_font;
     int m_fontPointSize = 11; // 8=small, 11=medium, 14=large

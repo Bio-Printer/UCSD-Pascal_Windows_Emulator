@@ -88,6 +88,14 @@ of an empty disk, say) a code file written to the first of them fails with
 "IO error: vol went off-line". The 1.06 operating system does the same; it
 is how II.0 works, not a 1.95 change.
 
+## File menu paths (version 1.96)
+
+The File menu shows the image file of each mounted unit after its Open and
+Unmount items. Windows right-aligns that column, so each path is padded on
+the right (spaces and hair spaces, measured in the menu font) to the width of
+the longest one: the paths start in the same place and the blank space is on
+their right.
+
 ## Volume files changed while the emulator runs
 
 The emulator reads each volume image into memory when it mounts it and
