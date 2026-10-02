@@ -275,6 +275,14 @@ programs' bodies rather than writing overlapping new ones.
 4. Once fixed, re-run `run_all.sh` from scratch — don't assume fixing
    one thing didn't disturb another.
 
+## Check 14: disk units 11 and 12 (full mode only)
+
+verify/UNITS.SCRIPT with a copy of ERRTEST.BLK on unit 11 and of
+data/Empty_Big_Disk.BLK on unit 12, in Z80 mode and in P-Code mode (memory
+reclaimed; Harvard too with VERIFY_HARVARD=1): the Filer's V(olumes must
+show both units on line, and STRCONST is compiled from #11 into #12 and run
+from there. v1.94: both modes pass.
+
 ## Shared native-code include files
 
 Since v1.64, new native code is written ONCE, in include files that live

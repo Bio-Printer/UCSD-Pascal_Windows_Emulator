@@ -264,6 +264,23 @@ rm -f /tmp/vv_tz.pcl
 echo
 fi
 
+if [ $QUICK -eq 0 ] && [ -x /tmp/validation_run_verify ]; then
+echo "=== Check 14: disk units 11 and 12 (verify/UNITS.SCRIPT), Z80 mode and P-Code mode ==="
+ok14=1
+for mode in z80 native; do
+    rm -rf /tmp/vv_u14; mkdir -p /tmp/vv_u14
+    cp ../verify/ERRTEST.BLK /tmp/vv_u14/U11.BLK; cp ../data/Empty_Big_Disk.BLK /tmp/vv_u14/U12.BLK
+    VERIFY_UNIT11=/tmp/vv_u14/U11.BLK VERIFY_UNIT12=/tmp/vv_u14/U12.BLK VERIFY_RECLAIM=$([ $mode = native ] && echo 1) \
+        /tmp/validation_run_verify ../data ../verify/SOURCE.BLK ../verify/COMPASM.BLK ../verify/UNITS.SCRIPT $mode /tmp/vv_u14/w "" 600 2>/dev/null > /tmp/vv_u14.out
+    on=$(tr -d '\000' < /tmp/vv_u14/w/transcript.txt | tr '\r' '\n' | grep -a -c "^ *1[12] # \(ERRTEST\|EMPTY\):")
+    echo "     $mode: units 11 and 12 on line: $on of 2; STRCONST compiled from #11 into #12 and run: $(grep -a -c 'STRCONST: 13 OF 13 CHECKS TRUE' /tmp/vv_u14/w/transcript.txt) of 1"
+    grep -q "VERIFY SCRIPT COMPLETED" /tmp/vv_u14.out && [ "$on" -eq 2 ] || ok14=0
+done
+if [ $ok14 -eq 1 ]; then echo "PASS"; else echo "FAIL: disk units 11 and 12"; FAIL=1; fi
+rm -rf /tmp/vv_u14
+echo
+fi
+
 if [ $FAIL -eq 0 ]; then
     echo "=== ALL CHECKS PASSED ==="
     exit 0
