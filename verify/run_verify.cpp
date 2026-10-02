@@ -24,6 +24,13 @@ int main(int argc, char** argv) {
         std::wstring uerr;
         if (!e.MountUnit10(W(u10), uerr)) { fprintf(stderr, "cannot mount unit #10\n"); return 2; }
     }
+    for (int u = 11; u <= 14; u++) {                           // VERIFY_UNIT11..14: volumes on units 11-14 (used in place)
+        const std::string var = "VERIFY_UNIT" + std::to_string(u);
+        if (const char* p = getenv(var.c_str())) {
+            std::wstring uerr;
+            if (!e.MountUnit(u, W(p), uerr)) { fprintf(stderr, "cannot mount unit #%d\n", u); return 2; }
+        }
+    }
     // VERIFY_IMPORT="unit:path": Options > Import File, before booting -- or,
     // with VERIFY_IMPORT_STEP=n, while the system runs, when the script
     // reaches step n (counting from 0)

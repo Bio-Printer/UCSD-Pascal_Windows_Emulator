@@ -74,6 +74,8 @@ public:
     // unitValueToDrive below). Safe to call before or after LoadFiles.
     bool MountUnit9(const std::wstring& path, std::wstring& errorMessageOut);
     bool MountUnit10(const std::wstring& path, std::wstring& errorMessageOut);
+    // Any disk unit other than the boot unit: 5, 9, 10, 11, 12, 13 or 14.
+    bool MountUnit(int unit, const std::wstring& path, std::wstring& errorMessageOut);
 
     // Runs Z80 instructions continuously until Stop() is called or the
     // CPU halts. Intended to be the body of a worker thread.
@@ -286,7 +288,7 @@ public:
     bool HasHalted() const { return m_halted; }
 
     // Debug-only accessor used by the standalone test harness.
-    size_t DebugDrive0Size() const { return m_volDrive0.size(); }
+    size_t DebugDrive0Size() const { return m_volDrive[0].size(); }
     uint16_t DebugPC() const { return m_cpu.r.PC; }
     long DebugInstrCount() const { return m_traceCounter; }
     uint8_t DebugBdDrive() const { return (uint8_t)m_bd.drive; }
@@ -389,21 +391,23 @@ private:
     Z80 m_cpu;
     uint8_t m_mem[65536];
 
-    std::vector<uint8_t> m_volDrive0, m_volDrive1, m_volDrive2, m_volDrive3;
+    // Disk units 4, 5, 9, 10, 11, 12, 13, 14 are drives 0..7 (UnitValueToDrive).
+    static constexpr int kDrives = 8;
+    std::vector<uint8_t> m_volDrive[kDrives];
     std::vector<uint8_t> m_floppy0, m_floppy1;
     // Where each drive's image actually lives on disk, so a Big Disk
     // WRITE can be committed back to the real file immediately (see
     // FlushDriveRegion) -- matches real disk hardware, which writes
     // to physical media as part of the write itself, not on some
     // later "save" step. Empty if that drive was never mounted.
-    std::wstring m_volDrive0Path, m_volDrive1Path, m_volDrive2Path, m_volDrive3Path;
+    std::wstring m_volDrivePath[kDrives];
     uint64_t m_diskFlushOkCount = 0, m_diskFlushFailCount = 0;
     // Size and last-write time of each drive's image file as the emulator
     // last saw it (loaded it, or wrote it itself): FlushDriveRegion refuses
     // to write when the file no longer matches.
     struct DiskStamp { bool valid = false; uint64_t size = 0; int64_t mtime = 0; };
-    DiskStamp m_diskStamp[4];
-    bool m_changedOnDisk[4] = { false, false, false, false };
+    DiskStamp m_diskStamp[kDrives];
+    bool m_changedOnDisk[kDrives] = {};
     std::atomic<int> m_changedOnDiskPending{ 0 };   // unit number for the UI, 0 = none
     void StampDrive(int drive);
     bool DriveFileUnchanged(int drive);

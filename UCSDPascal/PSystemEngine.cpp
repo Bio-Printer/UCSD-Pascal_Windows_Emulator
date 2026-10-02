@@ -227,14 +227,14 @@ bool PSystemEngine::LoadFiles(const std::wstring& pascalBinPath,
                               const std::wstring& bigDiskPath,
                               const std::wstring& emptyDiskPath,
                               std::wstring& errorMessageOut) {
-    if (!LoadWholeFile(bigDiskPath, m_volDrive0)) {
+    if (!LoadWholeFile(bigDiskPath, m_volDrive[0])) {
         errorMessageOut = L"Could not open Big Disk image:\r\n" + bigDiskPath;
         return false;
     }
-    m_volDrive0Path = bigDiskPath;
+    m_volDrivePath[0] = bigDiskPath;
     StampDrive(0);
     // Empty/scratch disk (unit 5) is optional -- not every session needs it.
-    if (LoadWholeFile(emptyDiskPath, m_volDrive1)) m_volDrive1Path = emptyDiskPath;
+    if (LoadWholeFile(emptyDiskPath, m_volDrive[1])) m_volDrivePath[1] = emptyDiskPath;
     StampDrive(1);
 
     FILE* pf = nullptr;
@@ -257,25 +257,23 @@ bool PSystemEngine::LoadFiles(const std::wstring& pascalBinPath,
     return true;
 }
 
-bool PSystemEngine::MountUnit9(const std::wstring& path, std::wstring& errorMessageOut) {
-    if (!LoadWholeFile(path, m_volDrive2)) {
-        errorMessageOut = L"Could not open unit #9 image:\r\n" + path;
+bool PSystemEngine::MountUnit(int unit, const std::wstring& path, std::wstring& errorMessageOut) {
+    const int drive = UnitValueToDrive((uint8_t)unit);
+    if (drive < 1 || drive >= kDrives) {               // drive 0 is the boot unit (LoadFiles)
+        errorMessageOut = L"There is no disk unit #" + std::to_wstring(unit) + L" (units 5, 9, 10, 11, 12, 13, 14).";
         return false;
     }
-    m_volDrive2Path = path;
-    StampDrive(2);
+    if (!LoadWholeFile(path, m_volDrive[drive])) {
+        errorMessageOut = L"Could not open unit #" + std::to_wstring(unit) + L" image:\r\n" + path;
+        return false;
+    }
+    m_volDrivePath[drive] = path;
+    StampDrive(drive);
     return true;
 }
 
-bool PSystemEngine::MountUnit10(const std::wstring& path, std::wstring& errorMessageOut) {
-    if (!LoadWholeFile(path, m_volDrive3)) {
-        errorMessageOut = L"Could not open unit #10 image:\r\n" + path;
-        return false;
-    }
-    m_volDrive3Path = path;
-    StampDrive(3);
-    return true;
-}
+bool PSystemEngine::MountUnit9(const std::wstring& path, std::wstring& errorMessageOut) { return MountUnit(9, path, errorMessageOut); }
+bool PSystemEngine::MountUnit10(const std::wstring& path, std::wstring& errorMessageOut) { return MountUnit(10, path, errorMessageOut); }
 
 bool PSystemEngine::EnableTrace(const std::wstring& tracePath, std::wstring& errorMessageOut) {
     if (m_traceFile) fclose(m_traceFile);
@@ -505,19 +503,11 @@ int PSystemEngine::UnitValueToDrive(uint8_t v) {
 }
 
 std::vector<uint8_t>* PSystemEngine::DriveImage(int drive) {
-    if (drive == 0) return &m_volDrive0;
-    if (drive == 1) return &m_volDrive1;
-    if (drive == 2) return &m_volDrive2;
-    if (drive == 3) return &m_volDrive3;
-    return nullptr;
+    return drive >= 0 && drive < kDrives ? &m_volDrive[drive] : nullptr;
 }
 
 std::wstring* PSystemEngine::DrivePath(int drive) {
-    if (drive == 0) return &m_volDrive0Path;
-    if (drive == 1) return &m_volDrive1Path;
-    if (drive == 2) return &m_volDrive2Path;
-    if (drive == 3) return &m_volDrive3Path;
-    return nullptr;
+    return drive >= 0 && drive < kDrives ? &m_volDrivePath[drive] : nullptr;
 }
 
 // ---------------------------------------------------------------------------
@@ -544,14 +534,14 @@ static bool StatImageFile(const std::wstring& path, uint64_t& size, int64_t& mti
 
 void PSystemEngine::StampDrive(int drive) {
     auto* path = DrivePath(drive);
-    if (drive < 0 || drive > 3 || !path) return;
+    if (drive < 0 || drive >= kDrives || !path) return;
     DiskStamp& s = m_diskStamp[drive];
     s.valid = !path->empty() && StatImageFile(*path, s.size, s.mtime);
     m_changedOnDisk[drive] = false;
 }
 
 bool PSystemEngine::DriveFileUnchanged(int drive) {
-    if (drive < 0 || drive > 3) return true;
+    if (drive < 0 || drive >= kDrives) return true;
     if (m_changedOnDisk[drive]) return false;           // already refused: stay refused
     const DiskStamp& s = m_diskStamp[drive];
     if (!s.valid) return true;                          // nothing recorded: no check
@@ -559,7 +549,7 @@ bool PSystemEngine::DriveFileUnchanged(int drive) {
     if (StatImageFile(*DrivePath(drive), size, mtime) && size == s.size && mtime == s.mtime)
         return true;
     m_changedOnDisk[drive] = true;
-    static const int units[4] = { 4, 5, 9, 10 };
+    static const int units[kDrives] = { 4, 5, 9, 10, 11, 12, 13, 14 };
     m_changedOnDiskPending.store(units[drive]);
     return false;
 }
@@ -567,15 +557,14 @@ bool PSystemEngine::DriveFileUnchanged(int drive) {
 int PSystemEngine::TakeChangedOnDiskUnit(std::wstring& pathOut) {
     const int unit = m_changedOnDiskPending.exchange(0);
     if (unit) {
-        const int drive = unit == 4 ? 0 : unit == 5 ? 1 : unit == 9 ? 2 : 3;
-        pathOut = *DrivePath(drive);
+        pathOut = *DrivePath(UnitValueToDrive((uint8_t)unit));
     }
     return unit;
 }
 
 bool PSystemEngine::IsChangedOnDisk(int unit) const {
-    const int drive = unit == 4 ? 0 : unit == 5 ? 1 : unit == 9 ? 2 : unit == 10 ? 3 : -1;
-    return drive >= 0 && m_changedOnDisk[drive];
+    const int drive = UnitValueToDrive((uint8_t)unit);
+    return drive >= 0 && drive < kDrives && m_changedOnDisk[drive];
 }
 
 bool PSystemEngine::FlushDriveRegion(int drive, long fileOffset, int length) {
@@ -603,13 +592,13 @@ bool PSystemEngine::FlushDriveRegion(int drive, long fileOffset, int length) {
 // UCSD Pascal volume directory helpers
 // ---------------------------------------------------------------------------
 
-// Unit-number-to-drive-index mapping (4→0, 5→1, 9→2, 10→3).
+// Unit-number-to-drive-index mapping (4→0, 5→1, 9→2, 10→3, 11..14→4..7).
 static int UnitToDriveIndex(int unit) {
-    if (unit == 4)  return 0;
-    if (unit == 5)  return 1;
-    if (unit == 9)  return 2;
-    if (unit == 10) return 3;
-    return -1;
+    switch (unit) {
+        case 4: return 0; case 5: return 1; case 9: return 2; case 10: return 3;
+        case 11: return 4; case 12: return 5; case 13: return 6; case 14: return 7;
+        default: return -1;
+    }
 }
 
 // UCSD Pascal disk layout (II.0, 512-byte blocks):
@@ -648,10 +637,7 @@ std::wstring PSystemEngine::GetVolumeNameForUnit(int unit) const {
     int drive = UnitToDriveIndex(unit);
     if (drive < 0) return L"";
     const std::vector<uint8_t>* img = nullptr;
-    if (drive == 0) img = &m_volDrive0;
-    else if (drive == 1) img = &m_volDrive1;
-    else if (drive == 2) img = &m_volDrive2;
-    else if (drive == 3) img = &m_volDrive3;
+    if (drive >= 0 && drive < kDrives) img = &m_volDrive[drive];
     if (!img || img->size() < (size_t)(UCSD_DIR_BYTE_OFFSET + 26)) return L"";
     int nameLen = (*img)[UCSD_DIR_BYTE_OFFSET + 6];
     if (nameLen < 0 || nameLen > 7) return L"";
@@ -1328,10 +1314,7 @@ std::vector<PSystemEngine::UcsdDirEntry> PSystemEngine::GetVolumeDirectory(int u
     int drive = UnitToDriveIndex(unit);
     if (drive < 0) return result;
     const std::vector<uint8_t>* img = nullptr;
-    if (drive == 0) img = &m_volDrive0;
-    else if (drive == 1) img = &m_volDrive1;
-    else if (drive == 2) img = &m_volDrive2;
-    else if (drive == 3) img = &m_volDrive3;
+    if (drive >= 0 && drive < kDrives) img = &m_volDrive[drive];
     if (!img || img->size() < (size_t)(UCSD_DIR_BYTE_OFFSET + UCSD_ENTRY_SIZE * 2))
         return result;
 
@@ -1374,10 +1357,7 @@ std::wstring PSystemEngine::ExportFileFromVolume(int unit, const std::wstring& u
 
     int drive = UnitToDriveIndex(unit);
     const std::vector<uint8_t>* img = nullptr;
-    if (drive == 0) img = &m_volDrive0;
-    else if (drive == 1) img = &m_volDrive1;
-    else if (drive == 2) img = &m_volDrive2;
-    else if (drive == 3) img = &m_volDrive3;
+    if (drive >= 0 && drive < kDrives) img = &m_volDrive[drive];
     if (!img) return L"Internal error: drive image unavailable.";
 
     long byteOffset = (long)found->firstBlock * 512L;
@@ -1449,7 +1429,7 @@ std::wstring PSystemEngine::ExportFileFromVolume(int unit, const std::wstring& u
 
 std::wstring PSystemEngine::ImportFileToVolume(int unit, const std::wstring& windowsFilePath) {
     int drive = UnitToDriveIndex(unit);
-    if (drive < 0) return L"Invalid unit number (use 4, 5, 9, or 10).";
+    if (drive < 0) return L"Invalid unit number (use 4, 5, 9, 10, 11, 12, 13 or 14).";
 
     std::vector<uint8_t>* img = DriveImage(drive);
     if (!img || img->empty())
@@ -5231,12 +5211,12 @@ void PSystemEngine::RunLoop() {
                 uint16_t blk = PeekStackWord(2);
                 uint16_t buf = (uint16_t)(bufHL + bufDE);
                 long fileOff = (long)blk * 512;
-                if (fileOff >= 0 && (size_t)(fileOff + len) <= m_volDrive0.size()) {
+                if (fileOff >= 0 && (size_t)(fileOff + len) <= m_volDrive[0].size()) {
                     if (isWrite) {
-                        for (int i = 0; i < len; i++) m_volDrive0[fileOff + i] = m_mem[(uint16_t)(buf + i)];
+                        for (int i = 0; i < len; i++) m_volDrive[0][fileOff + i] = m_mem[(uint16_t)(buf + i)];
                         FlushDriveRegion(0, fileOff, len);
                     }
-                    else         { for (int i = 0; i < len; i++) m_mem[(uint16_t)(buf + i)] = m_volDrive0[fileOff + i]; }
+                    else         { for (int i = 0; i < len; i++) m_mem[(uint16_t)(buf + i)] = m_volDrive[0][fileOff + i]; }
                     m_cpu.r.SP += 12;      // pop all 6 words (async,blk,len,bufDE,bufHL,unit)
                     m_mem[PM_V(0x02E4)] = 0;     // IORSLT low byte  = 0 (success)
                     m_mem[PM_V(0x02E5)] = 0;     // IORSLT high byte = 0
