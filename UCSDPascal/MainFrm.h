@@ -39,6 +39,8 @@ protected:
     afx_msg void OnFileOpenUnit10();
     afx_msg void OnFileOpenUnit11();
     afx_msg void OnFileOpenUnit12();
+    afx_msg void OnFileOpenUnit13();
+    afx_msg void OnFileOpenUnit14();
     afx_msg void OnFileExit();
     // UPDATE_COMMAND_UI: rewrite the File > Open items at menu-open time to
     // include the actual UCSD volume name (or "No Volume" if unmounted).
@@ -48,6 +50,8 @@ protected:
     afx_msg void OnUpdateFileOpenUnit10(CCmdUI* pCmdUI);
     afx_msg void OnUpdateFileOpenUnit11(CCmdUI* pCmdUI);
     afx_msg void OnUpdateFileOpenUnit12(CCmdUI* pCmdUI);
+    afx_msg void OnUpdateFileOpenUnit13(CCmdUI* pCmdUI);
+    afx_msg void OnUpdateFileOpenUnit14(CCmdUI* pCmdUI);
     // Right-click on a File > Open item (via WM_MENURHBUTTONUP) stores the
     // target unit and posts a deferred message to show the Unmount popup
     // after the main menu has closed.
@@ -61,12 +65,16 @@ protected:
     afx_msg void OnFileUnmount10();
     afx_msg void OnFileUnmount11();
     afx_msg void OnFileUnmount12();
+    afx_msg void OnFileUnmount13();
+    afx_msg void OnFileUnmount14();
     afx_msg void OnUpdateFileUnmount4(CCmdUI* pCmdUI);
     afx_msg void OnUpdateFileUnmount5(CCmdUI* pCmdUI);
     afx_msg void OnUpdateFileUnmount9(CCmdUI* pCmdUI);
     afx_msg void OnUpdateFileUnmount10(CCmdUI* pCmdUI);
     afx_msg void OnUpdateFileUnmount11(CCmdUI* pCmdUI);
     afx_msg void OnUpdateFileUnmount12(CCmdUI* pCmdUI);
+    afx_msg void OnUpdateFileUnmount13(CCmdUI* pCmdUI);
+    afx_msg void OnUpdateFileUnmount14(CCmdUI* pCmdUI);
     afx_msg void OnOptionsTrace();
     afx_msg void OnOptionsImportFile();
     afx_msg void OnOptionsExportFile();
@@ -123,7 +131,7 @@ private:
     CWinThread* m_workerThread = nullptr;
 
     std::wstring m_pascalBinPath, m_bigDiskPath, m_scratchDiskPath;
-    std::wstring m_unit9Path, m_unit10Path, m_unit11Path, m_unit12Path;
+    std::wstring m_unit9Path, m_unit10Path, m_unit11Path, m_unit12Path, m_unit13Path, m_unit14Path;
     std::wstring UnitImagePath(int unit) const;   // the image file mounted on a unit (File menu labels)
 
     CFont m_font;

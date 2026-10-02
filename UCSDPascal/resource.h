@@ -34,6 +34,10 @@
 #define ID_FILE_OPEN_UNIT12           32829
 #define ID_FILE_UNMOUNT_11            32830
 #define ID_FILE_UNMOUNT_12            32831
+#define ID_FILE_OPEN_UNIT13           32832
+#define ID_FILE_OPEN_UNIT14           32833
+#define ID_FILE_UNMOUNT_13            32834
+#define ID_FILE_UNMOUNT_14            32835
 
 #define ID_VIEW_OPCODECOUNT     32785
 
@@ -55,6 +59,8 @@
 #define IDC_IMPORT_RADIO10      1013
 #define IDC_IMPORT_RADIO11      1014
 #define IDC_IMPORT_RADIO12      1015
+#define IDC_IMPORT_RADIO13      1016
+#define IDC_IMPORT_RADIO14      1017
 
 #define IDC_EXPORT_UNIT_COMBO   1020
 #define IDC_EXPORT_FILE_LIST    1021

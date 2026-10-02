@@ -8,7 +8,7 @@ with native P-Code execution (`UCSDPascal/PSystemEngine.cpp` and the
 
 * **Build:** open `UCSDPascal.sln` in Visual Studio (x64). `data/pascal.bin`
   (the Z80 loader) is copied next to the .exe by the build.
-* **Volumes:** File > Open Unit #4 / #5 / #9 / #10 / #11 / #12. The disk images live in
+* **Volumes:** File > Open Unit #4 / #5 / #9 / #10 / #11 / #12 / #13 / #14. The disk images live in
   https://github.com/Bio-Printer/UCSD-Pascal-Volumes (`BLK_format/`).
 
 ## Harvard mode: separate I & D space (version 1.92)
@@ -72,16 +72,21 @@ Options > **Pause** (the first item) stops the P-System where it is; the item
 then reads **Resume**. Keys typed while paused are kept and delivered after
 Resume. The status bar says "Paused". Not available during Verify P-System.
 
-## Disk units 11 and 12 (version 1.94)
+## Disk units 11 to 14 (versions 1.94 and 1.95)
 
-File > Open Unit #11 and #12 work like #9 and #10: the volume shows in the
-Filer's V(olumes, `#11:` / `#12:` and the volume name work everywhere, and
-Options > Import / Export offer them. The operating system on the boot disk
-(SYSTEM.PASCAL) treats units 4, 5 and 9..12 as disk units and has a unit
-table only up to 12 (`MAXUNIT = 12` in its GLOBALS), so units 13 and 14
-would need a recompiled operating system; the engine already has the
-drives for them (`PSystemEngine::MountUnit`, run_verify `VERIFY_UNIT13/14`),
-but the menus do not offer them.
+File > Open Unit #11, #12, #13 and #14 work like #9 and #10: the volume shows
+in the Filer's V(olumes, `#11:` .. `#14:` and the volume name work
+everywhere, and Options > Import / Export offer them. Units 13 and 14 need
+BIGGY revision 1.07 (UCSD-Pascal-Volumes): its operating system is built
+with `MAXUNIT = 14` and disk units `[4,5,9..14]` (U134.4_OS_SOURCE_v1.07);
+an older SYSTEM.PASCAL has a unit table only up to 12 and reports units 13
+and 14 as "No such vol on-line".
+
+Give every mounted volume its own name. II.0 finds a volume by name when it
+closes a new file, so with two volumes of the same name on line (two copies
+of an empty disk, say) a code file written to the first of them fails with
+"IO error: vol went off-line". The 1.06 operating system does the same; it
+is how II.0 works, not a 1.95 change.
 
 ## Volume files changed while the emulator runs
 

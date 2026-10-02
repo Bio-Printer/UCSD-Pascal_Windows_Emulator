@@ -265,18 +265,27 @@ echo
 fi
 
 if [ $QUICK -eq 0 ] && [ -x /tmp/validation_run_verify ]; then
-echo "=== Check 14: disk units 11 and 12 (verify/UNITS.SCRIPT), Z80 mode and P-Code mode ==="
+echo "=== Check 14: disk units 11-14 (verify/UNITS.SCRIPT), Z80 mode and P-Code mode ==="
 ok14=1
 for mode in z80 native; do
     rm -rf /tmp/vv_u14; mkdir -p /tmp/vv_u14
-    cp ../verify/ERRTEST.BLK /tmp/vv_u14/U11.BLK; cp ../data/Empty_Big_Disk.BLK /tmp/vv_u14/U12.BLK
-    VERIFY_UNIT11=/tmp/vv_u14/U11.BLK VERIFY_UNIT12=/tmp/vv_u14/U12.BLK VERIFY_RECLAIM=$([ $mode = native ] && echo 1) \
+    cp ../verify/ERRTEST.BLK /tmp/vv_u14/U11.BLK; cp ../verify/ERRTEST.BLK /tmp/vv_u14/U14.BLK
+    cp ../data/Empty_Big_Disk.BLK /tmp/vv_u14/U12.BLK; cp ../data/Empty_Big_Disk.BLK /tmp/vv_u14/U13.BLK
+    # II.0 cannot close a new code file on the first of two volumes with the
+    # same name ("IO error: vol went off-line", the 1.06 OS too), so unit 13
+    # gets its own name: EMPTY2 (directory volume name at byte 1030)
+    printf '\006EMPTY2' | dd of=/tmp/vv_u14/U13.BLK bs=1 seek=1030 conv=notrunc 2>/dev/null
+    cp ../verify/errtest/DEEPC.C.txt /tmp/vv_u14/DEEPC.C
+    VERIFY_IMPORT=14:/tmp/vv_u14/DEEPC.C VERIFY_UNIT11=/tmp/vv_u14/U11.BLK VERIFY_UNIT12=/tmp/vv_u14/U12.BLK \
+    VERIFY_UNIT13=/tmp/vv_u14/U13.BLK VERIFY_UNIT14=/tmp/vv_u14/U14.BLK VERIFY_RECLAIM=$([ $mode = native ] && echo 1) \
         /tmp/validation_run_verify ../data ../verify/SOURCE.BLK ../verify/COMPASM.BLK ../verify/UNITS.SCRIPT $mode /tmp/vv_u14/w "" 600 2>/dev/null > /tmp/vv_u14.out
-    on=$(tr -d '\000' < /tmp/vv_u14/w/transcript.txt | tr '\r' '\n' | grep -a -c "^ *1[12] # \(ERRTEST\|EMPTY\):")
-    echo "     $mode: units 11 and 12 on line: $on of 2; STRCONST compiled from #11 into #12 and run: $(grep -a -c 'STRCONST: 13 OF 13 CHECKS TRUE' /tmp/vv_u14/w/transcript.txt) of 1"
-    grep -q "VERIFY SCRIPT COMPLETED" /tmp/vv_u14.out && [ "$on" -eq 2 ] || ok14=0
+    on=$(tr -d '\000' < /tmp/vv_u14/w/transcript.txt | tr '\r' '\n' | grep -a -c "^ *1[1-4] # \(ERRTEST\|EMPTY2\?\):")
+    nrun=$(grep -a -c 'STRCONST: 13 OF 13 CHECKS TRUE' /tmp/vv_u14/w/transcript.txt)
+    nget=$(grep -a -c 'Workfile is ERRTEST:DEEPC.C' /tmp/vv_u14/w/transcript.txt)
+    echo "     $mode: units 11-14 on line: $on of 4; G(et #14:DEEPC.C as the workfile: $nget of 1; STRCONST compiled #11 -> #12 and #14 -> #13 and run: $nrun of 2"
+    grep -q "VERIFY SCRIPT COMPLETED" /tmp/vv_u14.out && [ "$on" -eq 4 ] && [ "$nrun" -eq 2 ] && [ "$nget" -eq 1 ] || ok14=0
 done
-if [ $ok14 -eq 1 ]; then echo "PASS"; else echo "FAIL: disk units 11 and 12"; FAIL=1; fi
+if [ $ok14 -eq 1 ]; then echo "PASS"; else echo "FAIL: disk units 11-14"; FAIL=1; fi
 rm -rf /tmp/vv_u14
 echo
 fi

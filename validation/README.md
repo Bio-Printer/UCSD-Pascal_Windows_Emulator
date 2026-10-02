@@ -275,13 +275,17 @@ programs' bodies rather than writing overlapping new ones.
 4. Once fixed, re-run `run_all.sh` from scratch — don't assume fixing
    one thing didn't disturb another.
 
-## Check 14: disk units 11 and 12 (full mode only)
+## Check 14: disk units 11-14 (full mode only)
 
-verify/UNITS.SCRIPT with a copy of ERRTEST.BLK on unit 11 and of
-data/Empty_Big_Disk.BLK on unit 12, in Z80 mode and in P-Code mode (memory
-reclaimed; Harvard too with VERIFY_HARVARD=1): the Filer's V(olumes must
-show both units on line, and STRCONST is compiled from #11 into #12 and run
-from there. v1.94: both modes pass.
+verify/UNITS.SCRIPT with copies of ERRTEST.BLK on units 11 and 14 (DEEPC.C
+imported onto 14) and of data/Empty_Big_Disk.BLK on units 12 and 13 (unit 13's
+copy renamed EMPTY2:), in Z80
+mode and in P-Code mode (memory reclaimed; Harvard too with
+VERIFY_HARVARD=1): the Filer's V(olumes must show all four units on line,
+G(et #14:DEEPC.C must make the C source the workfile under its exact name,
+and STRCONST is compiled from #11 into #12 and from #14 into #13 and run
+from there. Needs BIGGY revision 1.07 (MAXUNIT = 14) in data/. v1.95: both
+modes pass.
 
 ## Shared native-code include files
 
