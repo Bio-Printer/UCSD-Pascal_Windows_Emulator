@@ -61,6 +61,7 @@ int main(int argc, char** argv) {
     if ((compare || record) && !e.StartVerifyLog(W(trace.substr(compare ? 8 : 7)), compare, werr)) { fprintf(stderr, "cannot open the verify log\n"); return 2; }
     if (getenv("VERIFY_STOP_AT")) e.SetVerifyStopAt(strtoull(getenv("VERIFY_STOP_AT"), nullptr, 10));
     if (getenv("VERIFY_RECLAIM")) e.SetReclaimInterpreterMemory(true);
+    if (getenv("VERIFY_HOSTCLOCK")) e.SetHostClock(true);    // the PC's date and time, as the GUI (not deterministic: off by default)
     const char* hv = getenv("VERIFY_HARVARD");          // with VERIFY_RECLAIM, native mode: code in its own I-space
     const bool harvard = hv && *hv && strcmp(hv, "0") != 0;   // (unset, empty or 0: off)
     if (harvard) e.SetHarvard(true);

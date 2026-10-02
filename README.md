@@ -123,7 +123,10 @@ outside, as a pull would -- tests the protection above),
 "z80 coprocessor:" line with the number of CSPs it did),
 `VERIFY_HARVARD=1` (with `VERIFY_RECLAIM=1`: Harvard mode; prints a
 "harvard layout:" line), `VERIFY_PAUSE=n:ms` (at step n, Pause for ms
-milliseconds, report how many P-code instructions ran meanwhile, Resume).
+milliseconds, report how many P-code instructions ran meanwhile, Resume),
+`VERIFY_HOSTCLOCK=1` (the PC's date and time, as the GUI's "PC date and
+time" option; off by default so runs are repeatable -- with it the
+compiler prints its time and lines/min).
 
 
 # Engine PR: CSP 138 (CALLI), version 1.91
