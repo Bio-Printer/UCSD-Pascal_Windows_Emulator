@@ -8,7 +8,7 @@ with native P-Code execution (`UCSDPascal/PSystemEngine.cpp` and the
 
 * **Build:** open `UCSDPascal.sln` in Visual Studio (x64). `data/pascal.bin`
   (the Z80 loader) is copied next to the .exe by the build.
-* **Volumes:** File > Open Unit #4 / #5 / #9 / #10. The disk images live in
+* **Volumes:** File > Open Unit #4 / #5 / #9 / #10 / #11 / #12. The disk images live in
   https://github.com/Bio-Printer/UCSD-Pascal-Volumes (`BLK_format/`).
 
 ## Harvard mode: separate I & D space (version 1.92)
@@ -72,6 +72,17 @@ Options > **Pause** (the first item) stops the P-System where it is; the item
 then reads **Resume**. Keys typed while paused are kept and delivered after
 Resume. The status bar says "Paused". Not available during Verify P-System.
 
+## Disk units 11 and 12 (version 1.94)
+
+File > Open Unit #11 and #12 work like #9 and #10: the volume shows in the
+Filer's V(olumes, `#11:` / `#12:` and the volume name work everywhere, and
+Options > Import / Export offer them. The operating system on the boot disk
+(SYSTEM.PASCAL) treats units 4, 5 and 9..12 as disk units and has a unit
+table only up to 12 (`MAXUNIT = 12` in its GLOBALS), so units 13 and 14
+would need a recompiled operating system; the engine already has the
+drives for them (`PSystemEngine::MountUnit`, run_verify `VERIFY_UNIT13/14`),
+but the menus do not offer them.
+
 ## Volume files changed while the emulator runs
 
 The emulator reads each volume image into memory when it mounts it and
@@ -98,7 +109,7 @@ script (`WAIT "text"` / `TYPE "keys"`):
     run_verify <data dir with Big_Disk.BLK, pascal.bin> <unit5.BLK> <unit9.BLK> <script> native|z80 <work dir> [trace] [max s]
 
 Environment options: `VERIFY_RECLAIM=1` (reclaim the Z80 interpreter's
-memory), `VERIFY_UNIT10=path` (mount unit #10 in place),
+memory), `VERIFY_UNIT10=path` .. `VERIFY_UNIT14=path` (mount units #10..#14 in place),
 `VERIFY_IMPORT=unit:path` (Options > Import File; with
 `VERIFY_IMPORT_STEP=n` at script step n, while the system runs),
 `VERIFY_TOUCH=n:path` (at step n, change the file's last-write time from
