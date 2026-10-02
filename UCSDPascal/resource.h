@@ -30,6 +30,10 @@
 #define ID_OPTIONS_HOST_CLOCK         32825
 #define ID_OPTIONS_PAUSE              32826
 #define ID_OPTIONS_HARVARD            32827
+#define ID_FILE_OPEN_UNIT11           32828
+#define ID_FILE_OPEN_UNIT12           32829
+#define ID_FILE_UNMOUNT_11            32830
+#define ID_FILE_UNMOUNT_12            32831
 
 #define ID_VIEW_OPCODECOUNT     32785
 
@@ -49,6 +53,8 @@
 #define IDC_IMPORT_RADIO5       1011
 #define IDC_IMPORT_RADIO9       1012
 #define IDC_IMPORT_RADIO10      1013
+#define IDC_IMPORT_RADIO11      1014
+#define IDC_IMPORT_RADIO12      1015
 
 #define IDC_EXPORT_UNIT_COMBO   1020
 #define IDC_EXPORT_FILE_LIST    1021

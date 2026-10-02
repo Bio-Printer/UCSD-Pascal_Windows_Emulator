@@ -47,19 +47,27 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
     ON_COMMAND(ID_FILE_OPEN_SCRATCH, &CMainFrame::OnFileOpenScratch)
     ON_COMMAND(ID_FILE_OPEN_UNIT9, &CMainFrame::OnFileOpenUnit9)
     ON_COMMAND(ID_FILE_OPEN_UNIT10, &CMainFrame::OnFileOpenUnit10)
+    ON_COMMAND(ID_FILE_OPEN_UNIT11, &CMainFrame::OnFileOpenUnit11)
+    ON_COMMAND(ID_FILE_OPEN_UNIT12, &CMainFrame::OnFileOpenUnit12)
     ON_COMMAND(ID_FILE_EXIT, &CMainFrame::OnFileExit)
     ON_COMMAND(ID_FILE_UNMOUNT_4,  &CMainFrame::OnFileUnmount4)
     ON_COMMAND(ID_FILE_UNMOUNT_5,  &CMainFrame::OnFileUnmount5)
     ON_COMMAND(ID_FILE_UNMOUNT_9,  &CMainFrame::OnFileUnmount9)
     ON_COMMAND(ID_FILE_UNMOUNT_10, &CMainFrame::OnFileUnmount10)
+    ON_COMMAND(ID_FILE_UNMOUNT_11, &CMainFrame::OnFileUnmount11)
+    ON_COMMAND(ID_FILE_UNMOUNT_12, &CMainFrame::OnFileUnmount12)
     ON_UPDATE_COMMAND_UI(ID_FILE_UNMOUNT_4,  &CMainFrame::OnUpdateFileUnmount4)
     ON_UPDATE_COMMAND_UI(ID_FILE_UNMOUNT_5,  &CMainFrame::OnUpdateFileUnmount5)
     ON_UPDATE_COMMAND_UI(ID_FILE_UNMOUNT_9,  &CMainFrame::OnUpdateFileUnmount9)
     ON_UPDATE_COMMAND_UI(ID_FILE_UNMOUNT_10, &CMainFrame::OnUpdateFileUnmount10)
+    ON_UPDATE_COMMAND_UI(ID_FILE_UNMOUNT_11, &CMainFrame::OnUpdateFileUnmount11)
+    ON_UPDATE_COMMAND_UI(ID_FILE_UNMOUNT_12, &CMainFrame::OnUpdateFileUnmount12)
     ON_UPDATE_COMMAND_UI(ID_FILE_OPEN_BIGDISK, &CMainFrame::OnUpdateFileOpenBigDisk)
     ON_UPDATE_COMMAND_UI(ID_FILE_OPEN_SCRATCH, &CMainFrame::OnUpdateFileOpenScratch)
     ON_UPDATE_COMMAND_UI(ID_FILE_OPEN_UNIT9,   &CMainFrame::OnUpdateFileOpenUnit9)
     ON_UPDATE_COMMAND_UI(ID_FILE_OPEN_UNIT10,  &CMainFrame::OnUpdateFileOpenUnit10)
+    ON_UPDATE_COMMAND_UI(ID_FILE_OPEN_UNIT11,  &CMainFrame::OnUpdateFileOpenUnit11)
+    ON_UPDATE_COMMAND_UI(ID_FILE_OPEN_UNIT12,  &CMainFrame::OnUpdateFileOpenUnit12)
     ON_MESSAGE(WM_MENURHBUTTONUP,     &CMainFrame::OnMenuRightButtonUp)
     ON_MESSAGE(WM_SHOW_UNMOUNT_MENU,  &CMainFrame::OnShowUnmountMenu)
     ON_COMMAND(ID_OPTIONS_TRACE, &CMainFrame::OnOptionsTrace)
@@ -637,6 +645,8 @@ void CMainFrame::SaveSettings() {
     rsave(L"Unit5Path",  m_scratchDiskPath);
     rsave(L"Unit9Path",  m_unit9Path);
     rsave(L"Unit10Path", m_unit10Path);
+    rsave(L"Unit11Path", m_unit11Path);
+    rsave(L"Unit12Path", m_unit12Path);
     AfxGetApp()->WriteProfileInt(L"Options", L"FontPointSize", m_fontPointSize);
     AfxGetApp()->WriteProfileInt(L"Options", L"TraceEnabled",  m_traceEnabled ? 1 : 0);
     AfxGetApp()->WriteProfileInt(L"Options", L"TraceZ80Mode",  m_traceZ80Mode ? 1 : 0);
@@ -664,6 +674,8 @@ void CMainFrame::RestartEngineWithCurrentPaths() {
     }
     if (!m_unit9Path.empty()) m_engine->MountUnit9(m_unit9Path, err);
     if (!m_unit10Path.empty()) m_engine->MountUnit10(m_unit10Path, err);
+    if (!m_unit11Path.empty()) m_engine->MountUnit(11, m_unit11Path, err);
+    if (!m_unit12Path.empty()) m_engine->MountUnit(12, m_unit12Path, err);
 
     // Apply execution mode (always, not just when tracing)
     m_engine->SetNativePcodeOps(!m_traceZ80Mode);
@@ -705,6 +717,8 @@ void CMainFrame::TryAutoLoad() {
     m_scratchDiskPath= rload(L"Unit5Path");
     m_unit9Path      = rload(L"Unit9Path");
     m_unit10Path     = rload(L"Unit10Path");
+    m_unit11Path     = rload(L"Unit11Path");
+    m_unit12Path     = rload(L"Unit12Path");
 
     // Load font preference (default: 11 pt / medium)
     m_fontPointSize = AfxGetApp()->GetProfileInt(L"Options", L"FontPointSize", 11);
@@ -758,6 +772,8 @@ void CMainFrame::TryAutoLoad() {
     chk(L"unit #5:  ",  m_scratchDiskPath);
     chk(L"unit #9:  ",  m_unit9Path);
     chk(L"unit #10: ",  m_unit10Path);
+    chk(L"unit #11: ",  m_unit11Path);
+    chk(L"unit #12: ",  m_unit12Path);
     if (!missing.IsEmpty()) {
         CString msg = L"These remembered volumes were not found and are not mounted:";
         msg += missing;
@@ -805,6 +821,24 @@ void CMainFrame::OnFileOpenUnit10() {
     RestartEngineWithCurrentPaths();
 }
 
+void CMainFrame::OnFileOpenUnit11() {
+    CFileDialog dlg(TRUE, nullptr, nullptr, OFN_FILEMUSTEXIST | OFN_HIDEREADONLY,
+                     L"Disk images (*.BLK;*.raw)|*.BLK;*.raw|All Files (*.*)|*.*||");
+    if (dlg.DoModal() != IDOK) return;
+    m_unit11Path = dlg.GetPathName();
+    SaveSettings();
+    RestartEngineWithCurrentPaths();
+}
+
+void CMainFrame::OnFileOpenUnit12() {
+    CFileDialog dlg(TRUE, nullptr, nullptr, OFN_FILEMUSTEXIST | OFN_HIDEREADONLY,
+                     L"Disk images (*.BLK;*.raw)|*.BLK;*.raw|All Files (*.*)|*.*||");
+    if (dlg.DoModal() != IDOK) return;
+    m_unit12Path = dlg.GetPathName();
+    SaveSettings();
+    RestartEngineWithCurrentPaths();
+}
+
 void CMainFrame::OnFileExit() {
     PostMessageW(WM_CLOSE);
 }
@@ -841,6 +875,8 @@ std::wstring CMainFrame::UnitImagePath(int unit) const {
         case 5:  return m_scratchDiskPath;
         case 9:  return m_unit9Path;
         case 10: return m_unit10Path;
+        case 11: return m_unit11Path;
+        case 12: return m_unit12Path;
         default: return std::wstring();
     }
 }
@@ -856,6 +892,12 @@ void CMainFrame::OnUpdateFileOpenUnit9(CCmdUI* p) {
 }
 void CMainFrame::OnUpdateFileOpenUnit10(CCmdUI* p) {
     SetFileMenuLabel(p, 10, L"1&0", m_engine.get(), UnitImagePath(10));
+}
+void CMainFrame::OnUpdateFileOpenUnit11(CCmdUI* p) {
+    SetFileMenuLabel(p, 11, L"1&1", m_engine.get(), UnitImagePath(11));
+}
+void CMainFrame::OnUpdateFileOpenUnit12(CCmdUI* p) {
+    SetFileMenuLabel(p, 12, L"1&2", m_engine.get(), UnitImagePath(12));
 }
 
 // ---------------------------------------------------------------------------
@@ -875,6 +917,8 @@ LRESULT CMainFrame::OnMenuRightButtonUp(WPARAM wParam, LPARAM lParam) {
     else if (cmdId == ID_FILE_OPEN_SCRATCH) unit = 5;
     else if (cmdId == ID_FILE_OPEN_UNIT9)   unit = 9;
     else if (cmdId == ID_FILE_OPEN_UNIT10)  unit = 10;
+    else if (cmdId == ID_FILE_OPEN_UNIT11)  unit = 11;
+    else if (cmdId == ID_FILE_OPEN_UNIT12)  unit = 12;
 
     if (unit == 0) return 0;
     if (m_engine->GetVolumeNameForUnit(unit).empty()) return 0; // nothing to unmount
@@ -896,7 +940,9 @@ LRESULT CMainFrame::OnShowUnmountMenu(WPARAM, LPARAM) {
 
     UINT unmountId = (unit == 4) ? ID_FILE_UNMOUNT_4  :
                      (unit == 5) ? ID_FILE_UNMOUNT_5  :
-                     (unit == 9) ? ID_FILE_UNMOUNT_9  : ID_FILE_UNMOUNT_10;
+                     (unit == 9) ? ID_FILE_UNMOUNT_9  :
+                     (unit == 10) ? ID_FILE_UNMOUNT_10 :
+                     (unit == 11) ? ID_FILE_UNMOUNT_11 : ID_FILE_UNMOUNT_12;
 
     CMenu ctx;
     ctx.CreatePopupMenu();
@@ -935,7 +981,9 @@ void CMainFrame::DoUnmount(int unit) {
     if      (unit == 4) m_bigDiskPath.clear();
     else if (unit == 5) m_scratchDiskPath.clear();
     else if (unit == 9) m_unit9Path.clear();
-    else                m_unit10Path.clear();
+    else if (unit == 10) m_unit10Path.clear();
+    else if (unit == 11) m_unit11Path.clear();
+    else                m_unit12Path.clear();
 
     SaveSettings();
 }
@@ -944,6 +992,8 @@ void CMainFrame::OnFileUnmount4()  { DoUnmount(4);  }
 void CMainFrame::OnFileUnmount5()  { DoUnmount(5);  }
 void CMainFrame::OnFileUnmount9()  { DoUnmount(9);  }
 void CMainFrame::OnFileUnmount10() { DoUnmount(10); }
+void CMainFrame::OnFileUnmount11() { DoUnmount(11); }
+void CMainFrame::OnFileUnmount12() { DoUnmount(12); }
 
 // UPDATE_COMMAND_UI for Unmount items: enabled only when something is
 // mounted on that unit; label shows the volume name so the user can
@@ -964,6 +1014,8 @@ void CMainFrame::OnUpdateFileUnmount4(CCmdUI*  p) { SetUnmountLabel(p, 4,  m_eng
 void CMainFrame::OnUpdateFileUnmount5(CCmdUI*  p) { SetUnmountLabel(p, 5,  m_engine.get(), UnitImagePath(5)); }
 void CMainFrame::OnUpdateFileUnmount9(CCmdUI*  p) { SetUnmountLabel(p, 9,  m_engine.get(), UnitImagePath(9)); }
 void CMainFrame::OnUpdateFileUnmount10(CCmdUI* p) { SetUnmountLabel(p, 10, m_engine.get(), UnitImagePath(10)); }
+void CMainFrame::OnUpdateFileUnmount11(CCmdUI* p) { SetUnmountLabel(p, 11, m_engine.get(), UnitImagePath(11)); }
+void CMainFrame::OnUpdateFileUnmount12(CCmdUI* p) { SetUnmountLabel(p, 12, m_engine.get(), UnitImagePath(12)); }
 
 // ---------------------------------------------------------------------------
 // Trace logging options dialog
@@ -1195,10 +1247,10 @@ public:
 
     BOOL OnInitDialog() override {
         CDialog::OnInitDialog();
-        static const int kIDs[] = { IDC_IMPORT_RADIO4, IDC_IMPORT_RADIO5,
-                                    IDC_IMPORT_RADIO9, IDC_IMPORT_RADIO10 };
+        static const int kIDs[] = { IDC_IMPORT_RADIO4, IDC_IMPORT_RADIO5, IDC_IMPORT_RADIO9,
+                                    IDC_IMPORT_RADIO10, IDC_IMPORT_RADIO11, IDC_IMPORT_RADIO12 };
         int firstLoaded = -1;
-        for (int i = 0; i < (int)m_units.size() && i < 4; i++) {
+        for (int i = 0; i < (int)m_units.size() && i < 6; i++) {
             CButton* btn = (CButton*)GetDlgItem(kIDs[i]);
             if (!btn) continue;
             btn->SetWindowTextW(m_units[i].label);
@@ -1219,9 +1271,9 @@ public:
     }
 
     void OnOK() override {
-        static const int kIDs[] = { IDC_IMPORT_RADIO4, IDC_IMPORT_RADIO5,
-                                    IDC_IMPORT_RADIO9, IDC_IMPORT_RADIO10 };
-        for (int i = 0; i < (int)m_units.size() && i < 4; i++) {
+        static const int kIDs[] = { IDC_IMPORT_RADIO4, IDC_IMPORT_RADIO5, IDC_IMPORT_RADIO9,
+                                    IDC_IMPORT_RADIO10, IDC_IMPORT_RADIO11, IDC_IMPORT_RADIO12 };
+        for (int i = 0; i < (int)m_units.size() && i < 6; i++) {
             CButton* btn = (CButton*)GetDlgItem(kIDs[i]);
             if (btn && btn->GetCheck() == BST_CHECKED) {
                 m_selectedUnit = m_units[i].unit;
@@ -1248,6 +1300,8 @@ void CMainFrame::OnOptionsImportFile() {
         { 5, L"Scratch Disk" },
         { 9, L"Floppy / Unit #9"  },
         {10, L"Floppy / Unit #10" },
+        {11, L"Unit #11" },
+        {12, L"Unit #12" },
     };
     std::vector<CImportUnitDlg::UnitStatus> statuses;
     for (auto& ku : kUnits) {
@@ -1323,7 +1377,7 @@ public:
         CDialog::OnInitDialog();
         // Populate the combo with every unit that has a volume loaded
         CComboBox* cb = (CComboBox*)GetDlgItem(IDC_EXPORT_UNIT_COMBO);
-        static const int kUnits[] = { 4, 5, 9, 10 };
+        static const int kUnits[] = { 4, 5, 9, 10, 11, 12 };
         int firstIdx = -1;
         for (int u : kUnits) {
             std::wstring vol = m_engine->GetVolumeNameForUnit(u);
