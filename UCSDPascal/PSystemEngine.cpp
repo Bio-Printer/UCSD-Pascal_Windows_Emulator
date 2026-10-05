@@ -2299,6 +2299,18 @@ void PSystemEngine::RunLoop() {
         };
         auto logPcodeAtBack = [&]() {
             if (m_cpu.r.PC != 0x03B0) return;
+            if (m_lowWaterOn.load(std::memory_order_relaxed)) {   // SetLowWater: SP - NP, the least
+                const uint16_t sp = m_cpu.r.SP, np = rd16(PM_V(0x0240));
+                if (sp > np) {                     // (not yet valid while the system starts)
+                    const int room = sp - np;
+                    m_lowWaterNow.store(room, std::memory_order_relaxed);
+                    if (m_lowWaterReset.load(std::memory_order_relaxed)) {
+                        m_lowWaterReset.store(false, std::memory_order_relaxed);
+                        m_lowWaterBytes.store(room, std::memory_order_relaxed);
+                    } else if (room < m_lowWaterBytes.load(std::memory_order_relaxed))
+                        m_lowWaterBytes.store(room, std::memory_order_relaxed);
+                }
+            }
             tracingActive = true; // arm on first BACK (proof interpreter is running)
             uint16_t bc     = m_cpu.r.BC(); // bc IS the IPC at this point
             uint8_t  opcode = PM_CODE8(bc);

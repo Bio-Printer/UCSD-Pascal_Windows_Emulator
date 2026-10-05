@@ -66,6 +66,14 @@ int main(int argc, char** argv) {
     const bool harvard = hv && *hv && strcmp(hv, "0") != 0;   // (unset, empty or 0: off)
     if (harvard) e.SetHarvard(true);
     e.SetConsoleCapture(true);
+    // VERIFY_LOWWATER=1: the least free memory (SP - NP) of the run, and the step it was reached in;
+    // =2: also each step's own least (tracking restarts at each step: the
+    // instructions between a step's end and the restart, at most a poll's
+    // worth, are not seen)
+    const char* lwv = getenv("VERIFY_LOWWATER");
+    const bool lowWater = lwv != nullptr, lowEachStep = lwv && strcmp(lwv, "2") == 0;
+    if (lowWater) e.SetLowWater(true);
+    int lowWords = -1; std::string lowStep;
     VerifyRunner r(e, steps);
     std::thread t([&] { e.RunLoop(); });
     auto t0 = std::chrono::steady_clock::now();
@@ -98,6 +106,17 @@ int main(int argc, char** argv) {
             fprintf(stderr, "pause at step %ld: %llu P-code instructions before the pause took hold, %llu during %ld ms paused "
                     "(engine waiting: %s), %llu in 200 ms after resume\n", pauseStep, (unsigned long long)(a - before),
                     (unsigned long long)(b - a), ms, waiting ? "yes" : "no (blocked for a key)", (unsigned long long)(pcodeCount() - b));
+        }
+        if (lowWater) {
+            const int w = e.LowWaterWords();
+            if (w >= 0 && (lowWords < 0 || w < lowWords)) {
+                lowWords = w;
+                lowStep = "step " + std::to_string(r.StepIndex() + 1) + ": " + r.CurrentStepText();
+            }
+            if (lowEachStep && r.StepIndex() != lastStep) {
+                if (lastStep != (size_t)-1) printf("low water: step %zu: %d words\n", lastStep + 1, w);
+                e.ResetLowWater();
+            }
         }
         if (r.StepIndex() != lastStep) {
             lastStep = r.StepIndex();
@@ -135,6 +154,12 @@ int main(int argc, char** argv) {
     for (unsigned char c : tr) { if (c == '\r') c = '\n'; if ((c >= 32 && c < 127) || c == '\n') fputc(c, tf); }
     fclose(tf);
     printf("P-code instructions %s: %llu\n", compare ? "compared" : (record ? "recorded" : "run"), (unsigned long long)e.VerifyRecordCount());
+    if (lowWater) {
+        const int w = e.LowWaterWords();
+        if (w >= 0 && (lowWords < 0 || w < lowWords)) { lowWords = w; lowStep = "the end"; }
+        if (lowEachStep && lastStep != (size_t)-1) printf("low water: step %zu: %d words\n", lastStep + 1, w);
+        printf("least free memory: %d words (SP - NP; reached during %s)\n", lowWords, lowStep.c_str());
+    }
     if (!native) printf("z80 coprocessor: %llu CSPs (doubles, CALLI, 4-byte real functions)\n", (unsigned long long)e.Z80CoprocessorCalls());
     if (harvard) printf("harvard layout: %s, %d segments on the code stack, %u bytes of I-space free\n",
                                          e.HarvardActive() ? "yes" : "NO", e.HarvardCodeSegments(), (unsigned)e.HarvardCodeFree());

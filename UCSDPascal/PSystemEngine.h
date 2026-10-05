@@ -89,6 +89,20 @@ public:
     bool PauseRequested() const { return m_pauseRequested; }
     bool IsPaused() const { return m_pausedNow; }
 
+    // Least free memory (Options > Track Least Free Memory): at every P-code
+    // instruction (BACK), in both modes, the room between the stack and the
+    // heap -- SP - NP, what STK OFLOW runs out of -- and the least seen since
+    // tracking was turned on or reset. Reset starts again from the room now.
+    // Each instruction's own pushes inside it (a few words) are not seen.
+    void SetLowWater(bool on) { m_lowWaterReset = true; m_lowWaterOn = on; }
+    bool LowWaterOn() const { return m_lowWaterOn; }
+    void ResetLowWater() { m_lowWaterReset = true; }
+    // the least free memory in words since the reset; -1 before the first
+    // P-code instruction after it
+    int LowWaterWords() const { const int b = m_lowWaterBytes; return b < 0 ? -1 : b / 2; }
+    // the free memory (words) at the last P-code instruction seen, -1 none
+    int LowWaterNowWords() const { const int b = m_lowWaterNow; return b < 0 ? -1 : b / 2; }
+
     // Instruction tracing (same "PC=.... A=.. BC=.... ..." format used
     // throughout this project), off by default. Enabling opens/creates
     // the given file; call before starting RunLoop for a full-session
@@ -431,6 +445,8 @@ private:
     HANDLE m_keyAvailable = nullptr;
     HANDLE m_stopEvent = nullptr;
     std::atomic<bool> m_pauseRequested{ false }, m_pausedNow{ false };
+    std::atomic<bool> m_lowWaterOn{ false }, m_lowWaterReset{ false };   // SetLowWater
+    std::atomic<int> m_lowWaterBytes{ -1 }, m_lowWaterNow{ -1 };
     bool PauseWait();                              // false: Stop arrived while paused
 
     volatile bool m_running = false;

@@ -54,6 +54,9 @@ BEGIN
         MENUITEM "Reclaim Z80 Interpreter and BIOS &Memory", ID_OPTIONS_RECLAIM_INTERP
         MENUITEM "Use PC &Date and Time",               ID_OPTIONS_HOST_CLOCK
         MENUITEM SEPARATOR
+        MENUITEM "Track &Least Free Memory",             ID_OPTIONS_LOWWATER
+        MENUITEM "Least Free Memory: --  (click to reset)", ID_OPTIONS_LOWWATER_RESET
+        MENUITEM SEPARATOR
         POPUP "&Verify P-System"
         BEGIN
             MENUITEM "&Record Reference Log (Z80 mode)...",  ID_OPTIONS_VERIFY_RECORD
@@ -193,8 +196,8 @@ IDR_MAINFRAME           ICON                    "res\\UCSDPascal.ico"
 // Version
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 1,96,0,0    // keep in sync with APP_VERSION_W in Version.h (currently "1.96")
- PRODUCTVERSION 1,96,0,0
+ FILEVERSION 1,97,0,0    // keep in sync with APP_VERSION_W in Version.h (currently "1.97")
+ PRODUCTVERSION 1,97,0,0
  FILEFLAGSMASK 0x3fL
  FILEFLAGS 0x0L
  FILEOS 0x40004L
@@ -206,9 +209,9 @@ BEGIN
         BLOCK "040904b0"
         BEGIN
             VALUE "FileDescription",  "UCSD Pascal II.0 Emulator"
-            VALUE "FileVersion",      "1.96"
+            VALUE "FileVersion",      "1.97"
             VALUE "ProductName",      "UCSD Pascal II.0 Emulator"
-            VALUE "ProductVersion",   "1.96"
+            VALUE "ProductVersion",   "1.97"
         END
     END
     BLOCK "VarFileInfo"

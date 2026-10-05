@@ -85,6 +85,8 @@ protected:
     afx_msg void OnOptionsHostClock();
     afx_msg void OnOptionsHarvard();
     afx_msg void OnOptionsPause();
+    afx_msg void OnOptionsLowWater();
+    afx_msg void OnOptionsLowWaterReset();
     afx_msg void OnOptionsFontSmall();
     afx_msg void OnOptionsFontMedium();
     afx_msg void OnOptionsFontLarge();
@@ -105,6 +107,8 @@ protected:
     afx_msg void OnUpdateOptionsHostClock(CCmdUI* pCmdUI);
     afx_msg void OnUpdateOptionsHarvard(CCmdUI* pCmdUI);
     afx_msg void OnUpdateOptionsPause(CCmdUI* pCmdUI);
+    afx_msg void OnUpdateOptionsLowWater(CCmdUI* pCmdUI);
+    afx_msg void OnUpdateOptionsLowWaterReset(CCmdUI* pCmdUI);
     afx_msg void OnUpdateOptionsFontSmall(CCmdUI* pCmdUI);
     afx_msg void OnUpdateOptionsFontMedium(CCmdUI* pCmdUI);
     afx_msg void OnUpdateOptionsFontLarge(CCmdUI* pCmdUI);
@@ -149,6 +153,7 @@ private:
     bool m_hostClock = true;                 // the PC's date and time for the P-System (PSystemEngine::SetHostClock)
     bool m_harvardMode = true;               // code in its own I-space (PSystemEngine::SetHarvard); needs the reclaimed layout
     bool m_paused = false;                   // Options > Pause / Resume (PSystemEngine::SetPaused)
+    bool m_lowWater = false;                 // Options > Track Least Free Memory (PSystemEngine::SetLowWater)
     bool m_reclaimFaultShown = false;
     bool m_bootFaultShown = false;
 

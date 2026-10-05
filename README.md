@@ -96,6 +96,26 @@ the right (spaces and hair spaces, measured in the menu font) to the width of
 the longest one: the paths start in the same place and the blank space is on
 their right.
 
+## Least free memory (version 1.97)
+
+Options > **Track Least Free Memory** (remembered; no restart needed) makes
+the engine watch, at every P-code instruction and in both modes, the room
+between the stack and the heap -- SP - NP, the memory a program has left
+before *STK OFLOW* -- and keep the least it has seen. The item below it
+shows that worst case, **Least Free Memory: N words**; clicking it starts
+again from the room at that moment (so: click, run the program, open the
+menu). While tracking, the status bar shows it too, with the room now:
+"least free N words (now M)".
+
+The figure is on the same scale as the P-System's own MEMAVAIL ("words
+free"): a program that reads MEMAVAIL at its deepest point shows N exactly
+that number less what its own printf pushes. Each instruction's pushes
+inside itself (a few words) are not seen, nor is the 2 KB directory buffer
+the operating system reads above the heap when it opens a file (that buffer
+is not part of the heap, and the stack may use the memory again).
+run_verify: `VERIFY_LOWWATER=1` prints "least free memory: N words" and the
+script step it was reached in; `=2` also the least of every step.
+
 ## Volume files changed while the emulator runs
 
 The emulator reads each volume image into memory when it mounts it and
@@ -134,7 +154,9 @@ outside, as a pull would -- tests the protection above),
 milliseconds, report how many P-code instructions ran meanwhile, Resume),
 `VERIFY_HOSTCLOCK=1` (the PC's date and time, as the GUI's "PC date and
 time" option; off by default so runs are repeatable -- with it the
-compiler prints its time and lines/min).
+compiler prints its time and lines/min),
+`VERIFY_LOWWATER=1` (the least free memory, SP - NP, of the run and the
+step it was reached in; `=2` also each step's).
 
 
 # Engine PR: CSP 138 (CALLI), version 1.91

@@ -88,6 +88,8 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
     ON_COMMAND(ID_OPTIONS_HOST_CLOCK, &CMainFrame::OnOptionsHostClock)
     ON_COMMAND(ID_OPTIONS_HARVARD, &CMainFrame::OnOptionsHarvard)
     ON_COMMAND(ID_OPTIONS_PAUSE, &CMainFrame::OnOptionsPause)
+    ON_COMMAND(ID_OPTIONS_LOWWATER, &CMainFrame::OnOptionsLowWater)
+    ON_COMMAND(ID_OPTIONS_LOWWATER_RESET, &CMainFrame::OnOptionsLowWaterReset)
     ON_COMMAND(ID_OPTIONS_FONT_SMALL, &CMainFrame::OnOptionsFontSmall)
     ON_COMMAND(ID_OPTIONS_FONT_MEDIUM, &CMainFrame::OnOptionsFontMedium)
     ON_COMMAND(ID_OPTIONS_FONT_LARGE, &CMainFrame::OnOptionsFontLarge)
@@ -109,6 +111,8 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
     ON_UPDATE_COMMAND_UI(ID_OPTIONS_HOST_CLOCK, &CMainFrame::OnUpdateOptionsHostClock)
     ON_UPDATE_COMMAND_UI(ID_OPTIONS_HARVARD, &CMainFrame::OnUpdateOptionsHarvard)
     ON_UPDATE_COMMAND_UI(ID_OPTIONS_PAUSE, &CMainFrame::OnUpdateOptionsPause)
+    ON_UPDATE_COMMAND_UI(ID_OPTIONS_LOWWATER, &CMainFrame::OnUpdateOptionsLowWater)
+    ON_UPDATE_COMMAND_UI(ID_OPTIONS_LOWWATER_RESET, &CMainFrame::OnUpdateOptionsLowWaterReset)
     ON_UPDATE_COMMAND_UI(ID_OPTIONS_FONT_SMALL, &CMainFrame::OnUpdateOptionsFontSmall)
     ON_UPDATE_COMMAND_UI(ID_OPTIONS_FONT_MEDIUM, &CMainFrame::OnUpdateOptionsFontMedium)
     ON_UPDATE_COMMAND_UI(ID_OPTIONS_FONT_LARGE, &CMainFrame::OnUpdateOptionsFontLarge)
@@ -596,6 +600,13 @@ void CMainFrame::UpdateStatusBarText() {
         text = L"System halted.";
     } else if (m_engine->IsRunning()) {
         text = m_paused ? L"Paused -- Options > Resume to continue" : (m_traceEnabled ? L"Running (tracing to trace.txt)" : L"Running");
+        if (m_lowWater && m_engine->LowWaterOn()) {          // Options > Track Least Free Memory
+            const int least = m_engine->LowWaterWords(), now = m_engine->LowWaterNowWords();
+            CString lw;
+            if (least >= 0) lw.Format(L" -- least free %d words (now %d)", least, now);
+            else lw = L" -- least free: not yet measured";
+            text += lw;
+        }
         // The configuration actually running: execution mode, how it booted,
         // the memory layout the engine is in (not just what the menu says),
         // register compatibility and the clock. Settings that take effect at
@@ -665,6 +676,7 @@ void CMainFrame::SaveSettings() {
     AfxGetApp()->WriteProfileInt(L"Options", L"ReclaimInterpMemory", m_reclaimInterpMemory ? 1 : 0);
     AfxGetApp()->WriteProfileInt(L"Options", L"HostClock", m_hostClock ? 1 : 0);
     AfxGetApp()->WriteProfileInt(L"Options", L"HarvardMode", m_harvardMode ? 1 : 0);
+    AfxGetApp()->WriteProfileInt(L"Options", L"LowWater", m_lowWater ? 1 : 0);
 }
 
 void CMainFrame::RestartEngineWithCurrentPaths() {
@@ -699,6 +711,7 @@ void CMainFrame::RestartEngineWithCurrentPaths() {
     m_engine->SetHostClock(m_hostClock);   // today's date and TIME from the PC (not in Verify runs: deterministic)
     // Harvard mode needs the reclaimed layout (the engine ignores it otherwise).
     m_engine->SetHarvard(m_harvardMode && !m_traceZ80Mode && !m_preserveZ80RegisterCompat && m_reclaimInterpMemory);
+    m_engine->SetLowWater(m_lowWater);     // Options > Track Least Free Memory
     m_paused = false;                      // a new engine runs
     m_reclaimFaultShown = false;
     m_bootFaultShown = false;
@@ -748,6 +761,7 @@ void CMainFrame::TryAutoLoad() {
     m_reclaimInterpMemory = (AfxGetApp()->GetProfileInt(L"Options", L"ReclaimInterpMemory", 0) != 0);
     m_hostClock = (AfxGetApp()->GetProfileInt(L"Options", L"HostClock", 1) != 0);
     m_harvardMode = (AfxGetApp()->GetProfileInt(L"Options", L"HarvardMode", 1) != 0);   // default on (engine 1.92)
+    m_lowWater = (AfxGetApp()->GetProfileInt(L"Options", L"LowWater", 0) != 0);
 
     // pascal.bin (the Z80 loader) is needed unless the P-System boots natively
     // with nothing Z80: P-Code mode, register compatibility off, memory reclaimed.
@@ -1305,6 +1319,37 @@ void CMainFrame::OnOptionsPause() {
     m_paused = !m_paused;
     m_engine->SetPaused(m_paused);
     UpdateStatusBarText();
+}
+
+// Track Least Free Memory: the engine watches the room between the stack and
+// the heap (SP - NP) at every P-code instruction and keeps the least
+// (PSystemEngine::SetLowWater). The item below it shows that number;
+// clicking it starts again from the room now. No restart needed.
+void CMainFrame::OnOptionsLowWater() {
+    m_lowWater = !m_lowWater;
+    SaveSettings();
+    if (m_engine) m_engine->SetLowWater(m_lowWater);
+    UpdateStatusBarText();
+}
+
+void CMainFrame::OnUpdateOptionsLowWater(CCmdUI* pCmdUI) {
+    pCmdUI->SetCheck(m_lowWater ? 1 : 0);
+}
+
+void CMainFrame::OnOptionsLowWaterReset() {
+    if (!m_lowWater || !m_engine) return;
+    m_engine->ResetLowWater();
+    UpdateStatusBarText();
+}
+
+void CMainFrame::OnUpdateOptionsLowWaterReset(CCmdUI* pCmdUI) {
+    const int least = m_lowWater && m_engine ? m_engine->LowWaterWords() : -1;
+    CString t;
+    if (!m_lowWater) t = L"Least Free Memory: (tracking is off)";
+    else if (least < 0) t = L"Least Free Memory: not yet measured  (click to reset)";
+    else t.Format(L"Least Free Memory: %d words  (click to reset)", least);
+    pCmdUI->SetText(t);
+    pCmdUI->Enable(m_lowWater && m_engine && m_engine->IsRunning());
 }
 
 void CMainFrame::OnUpdateOptionsPause(CCmdUI* pCmdUI) {
