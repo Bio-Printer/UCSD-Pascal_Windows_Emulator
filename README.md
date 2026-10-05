@@ -96,7 +96,7 @@ the right (spaces and hair spaces, measured in the menu font) to the width of
 the longest one: the paths start in the same place and the blank space is on
 their right.
 
-## Least free memory (version 1.97)
+## Least free memory (versions 1.97 and 1.98)
 
 Options > **Track Least Free Memory** (remembered; no restart needed) makes
 the engine watch, at every P-code instruction and in both modes, the room
@@ -115,6 +115,10 @@ the operating system reads above the heap when it opens a file (that buffer
 is not part of the heap, and the stack may use the memory again).
 run_verify: `VERIFY_LOWWATER=1` prints "least free memory: N words" and the
 script step it was reached in; `=2` also the least of every step.
+
+Version 1.97 gave the two menu items the command IDs of File > Open Unit
+#11 and #12 (32828, 32829): they showed as "Open Unit #11/#12" and opened
+those units.  1.98 gives them IDs of their own (32836, 32837).
 
 ## Volume files changed while the emulator runs
 

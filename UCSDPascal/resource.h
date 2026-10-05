@@ -30,8 +30,6 @@
 #define ID_OPTIONS_HOST_CLOCK         32825
 #define ID_OPTIONS_PAUSE              32826
 #define ID_OPTIONS_HARVARD            32827
-#define ID_OPTIONS_LOWWATER           32828
-#define ID_OPTIONS_LOWWATER_RESET     32829
 #define ID_FILE_OPEN_UNIT11           32828
 #define ID_FILE_OPEN_UNIT12           32829
 #define ID_FILE_UNMOUNT_11            32830
@@ -40,6 +38,8 @@
 #define ID_FILE_OPEN_UNIT14           32833
 #define ID_FILE_UNMOUNT_13            32834
 #define ID_FILE_UNMOUNT_14            32835
+#define ID_OPTIONS_LOWWATER           32836
+#define ID_OPTIONS_LOWWATER_RESET     32837
 
 #define ID_VIEW_OPCODECOUNT     32785
 
