@@ -96,7 +96,7 @@ the right (spaces and hair spaces, measured in the menu font) to the width of
 the longest one: the paths start in the same place and the blank space is on
 their right.
 
-## Least free memory (versions 1.97 and 1.98)
+## Least free memory (versions 1.97 to 1.99)
 
 Options > **Track Least Free Memory** (remembered; no restart needed) makes
 the engine watch, at every P-code instruction and in both modes, the room
@@ -119,6 +119,18 @@ script step it was reached in; `=2` also the least of every step.
 Version 1.97 gave the two menu items the command IDs of File > Open Unit
 #11 and #12 (32828, 32829): they showed as "Open Unit #11/#12" and opened
 those units.  1.98 gives them IDs of their own (32836, 32837).
+
+Version 1.99 lets a program measure itself the same way, through the
+word SYSCOM^.EXPANSION[8] (address 0x0318 in the P-machine's variable
+block; the operating system does not use it).  The program stores
+0xFFFF there; from its next P-code instruction on the engine keeps in
+that word the least free memory, in words (SP - NP, at least 1), since
+then; storing 0 stops it.  Until it sees 0xFFFF the engine leaves the
+word alone, and without the engine (another machine) the word keeps the
+0xFFFF, so the program can tell.  It is always on, independent of the
+menu option.  Tiny-C: memleast_start(), memleast(), memleast_stop() in
+psys.h; the Tiny-C compiler's "(N words free)" after each pass is that
+pass's least, so the least of them is what the status bar shows.
 
 ## Volume files changed while the emulator runs
 

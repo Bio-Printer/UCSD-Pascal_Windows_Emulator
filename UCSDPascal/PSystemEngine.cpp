@@ -2299,6 +2299,21 @@ void PSystemEngine::RunLoop() {
         };
         auto logPcodeAtBack = [&]() {
             if (m_cpu.r.PC != 0x03B0) return;
+            {                                       // the program's own least free memory (kProgLowWaterAddr)
+                const uint16_t a = PM_V(kProgLowWaterAddr);
+                const uint16_t w = rd16(a);
+                if (w == 0xFFFF || (m_progLowWater && w != 0)) {
+                    const uint16_t sp = m_cpu.r.SP, np = rd16(PM_V(0x0240));
+                    uint16_t room = sp > np ? (uint16_t)((sp - np) / 2) : 0;
+                    if (room == 0) room = 1;
+                    if (w == 0xFFFF || room < w) {
+                        m_mem[a] = (uint8_t)room;
+                        m_mem[(uint16_t)(a + 1)] = (uint8_t)(room >> 8);
+                    }
+                    m_progLowWater = true;
+                } else if (w == 0)
+                    m_progLowWater = false;
+            }
             if (m_lowWaterOn.load(std::memory_order_relaxed)) {   // SetLowWater: SP - NP, the least
                 const uint16_t sp = m_cpu.r.SP, np = rd16(PM_V(0x0240));
                 if (sp > np) {                     // (not yet valid while the system starts)

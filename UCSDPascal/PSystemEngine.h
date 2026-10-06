@@ -102,6 +102,14 @@ public:
     int LowWaterWords() const { const int b = m_lowWaterBytes; return b < 0 ? -1 : b / 2; }
     // the free memory (words) at the last P-code instruction seen, -1 none
     int LowWaterNowWords() const { const int b = m_lowWaterNow; return b < 0 ? -1 : b / 2; }
+    // The same measure for the program itself (version 1.99), through
+    // SYSCOM^.EXPANSION[8] (PM_V(0x0318); unused by the operating system):
+    // a program stores 0xFFFF there to start; from the next P-code
+    // instruction on the engine keeps in it the least free memory (SP - NP,
+    // in words, at least 1) since; storing 0 stops it.  Until it sees 0xFFFF
+    // the engine leaves the word alone.  Always on (independent of the menu
+    // option); without it (another machine) the word keeps the 0xFFFF.
+    static constexpr uint16_t kProgLowWaterAddr = 0x0318;
 
     // Instruction tracing (same "PC=.... A=.. BC=.... ..." format used
     // throughout this project), off by default. Enabling opens/creates
@@ -447,6 +455,7 @@ private:
     std::atomic<bool> m_pauseRequested{ false }, m_pausedNow{ false };
     std::atomic<bool> m_lowWaterOn{ false }, m_lowWaterReset{ false };   // SetLowWater
     std::atomic<int> m_lowWaterBytes{ -1 }, m_lowWaterNow{ -1 };
+    bool m_progLowWater = false;                          // EXPANSION[8] is being kept (kProgLowWaterAddr)
     bool PauseWait();                              // false: Stop arrived while paused
 
     volatile bool m_running = false;
