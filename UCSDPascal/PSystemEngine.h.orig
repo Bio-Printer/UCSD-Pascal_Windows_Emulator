@@ -176,10 +176,6 @@ public:
     // command set doesn't need them beyond what already maps to plain
     // ASCII control codes (ESC, CR, BS, etc.).
     void PostKey(uint8_t ch);
-    // A program that wants Page Up, Page Down, Home, End, Insert and Delete
-    // as one code each (Tiny-C's vi) sets SYSCOM^.EXPANSION[1] to 25605
-    // (PX_KEYS in Tiny-C's psys.h) while it runs. See MainFrm OnKeyDown.
-    bool WantsKeyCodes() const;
 
     // Verify P-System support (see verify/). IsWaitingForKey(): the system
     // is blocked in CONIN with nothing queued -- after a scripted run this

@@ -132,6 +132,32 @@ menu option.  Tiny-C: memleast_start(), memleast(), memleast_stop() in
 psys.h; the Tiny-C compiler's "(N words free)" after each pass is that
 pass's least, so the least of them is what the status bar shows.
 
+## Page Up ... Delete as one code each (version 2.00)
+
+Page Up, Page Down, Home, End, Insert and Delete have no setting in
+SYSTEM.MISCINFO, so the emulator types the UCSD editor's own commands for
+them (Page Down `>P`, Page Up `<P>`, Home `JB`, End `JE`, Insert `I`,
+Delete `D` ^U ^C; see EDITOR_KEYS.md). Other programs -- Tiny-C's vi --
+take those letters as their own commands. From version 2.00 a program can
+ask for one code per key instead: while the word SYSCOM^.EXPANSION[1]
+(address 0x030A in the P-machine's variable block; the operating system
+does not use it) is 25605, these keys send
+
+| Key | Code |
+|---|---|
+| Home | 0x84 |
+| End | 0x85 |
+| Insert | 0x86 |
+| Delete | 0x87 |
+| Page Up | 0x88 |
+| Page Down | 0x89 |
+
+The program stores 25605 when it starts and 0 when it ends, so the editor
+and everything else get the keys as before. Tiny-C: `PX_KEYS` and
+`KEY_HOME` ... `KEY_PGDN` in psys.h; vi (TOOLS:VI.CODE) does it, and its
+Page Up/Down page, Home/End go to the start/end of the line, Insert
+inserts and Delete deletes the character under the cursor.
+
 ## Volume files changed while the emulator runs
 
 The emulator reads each volume image into memory when it mounts it and

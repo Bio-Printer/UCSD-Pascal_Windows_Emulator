@@ -40,6 +40,8 @@ While inserting:
 | **Ctrl+Backspace** | Erase the line you are typing (on the first line of an insertion the editor answers "No insertion to back over") |
 | **Return** | New line |
 
+Page Up/Down, Home, End, Insert and Delete type the editor commands above (`>P`, `<P>`, `JB`, `JE`, `I`, `D` ^U ^C). A program that sets SYSCOM^.EXPANSION[1] to 25605 while it runs (Tiny-C's vi) gets one code each instead (version 2.00; README).
+
 ## Other editor commands (letters at the `>Edit:` prompt)
 
 | Key | Command |

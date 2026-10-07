@@ -488,24 +488,9 @@ void CMainFrame::OnChar(UINT nChar, UINT nRepCnt, UINT nFlags) {
 //     Delete     "D" ^U ^C  delete the character under the cursor
 //   Every sequence was checked against the real SYSTEM.EDITOR in the
 //   harness (v1.68).
-//   A program that sets SYSCOM^.EXPANSION[1] to 25605 while it runs (Tiny-C's
-//   vi; PX_KEYS in psys.h) gets these six keys as one code each instead:
-//   Home 0x84, End 0x85, Insert 0x86, Delete 0x87, Page Up 0x88,
-//   Page Down 0x89 (KEY_HOME ... KEY_PGDN in psys.h).
 void CMainFrame::OnKeyDown(UINT nChar, UINT nRepCnt, UINT nFlags) {
     if (m_verifyRunner) return;   // the verify script owns the keyboard
     auto send = [this](const char* keys) { for (const char* p = keys; *p; p++) m_engine->PostKey((uint8_t)*p); };
-    if (m_engine->WantsKeyCodes()) {
-        switch (nChar) {
-            case VK_HOME:   m_engine->PostKey(0x84); return;
-            case VK_END:    m_engine->PostKey(0x85); return;
-            case VK_INSERT: m_engine->PostKey(0x86); return;
-            case VK_DELETE: m_engine->PostKey(0x87); return;
-            case VK_PRIOR:  m_engine->PostKey(0x88); return; // Page Up
-            case VK_NEXT:   m_engine->PostKey(0x89); return; // Page Down
-            default: break;
-        }
-    }
     switch (nChar) {
         case VK_UP:     m_engine->PostKey(0x14); return; // ^T
         case VK_DOWN:   m_engine->PostKey(0x12); return; // ^R
