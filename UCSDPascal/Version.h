@@ -9,4 +9,4 @@
 #pragma once
 
 #define APP_NAME_W    L"UCSD Pascal II.0 Emulator"
-#define APP_VERSION_W L"2.00"
+#define APP_VERSION_W L"2.01"

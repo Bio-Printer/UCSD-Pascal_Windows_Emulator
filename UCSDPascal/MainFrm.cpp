@@ -38,6 +38,7 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
     ON_WM_SIZE()
     ON_WM_CHAR()
     ON_WM_KEYDOWN()
+    ON_WM_MOUSEWHEEL()
     ON_WM_LBUTTONDOWN()
     ON_WM_MOUSEMOVE()
     ON_WM_LBUTTONUP()
@@ -520,6 +521,25 @@ void CMainFrame::OnKeyDown(UINT nChar, UINT nRepCnt, UINT nFlags) {
         default: break;
     }
     CFrameWnd::OnKeyDown(nChar, nRepCnt, nFlags);
+}
+
+// The mouse wheel: for a program that asks for one code per key (the same
+// SYSCOM^.EXPANSION[1] = 25605 as for Page Up ... Delete), each notch away
+// from you sends 0x96, each notch towards you 0x97 (KEY_WHEELUP and
+// KEY_WHEELDN in Tiny-C's psys.h; vi scrolls 3 lines for each). Finer
+// wheels and touchpads add up to a notch (WHEEL_DELTA) first. Without the
+// flag the wheel sends nothing, as before.
+BOOL CMainFrame::OnMouseWheel(UINT nFlags, short zDelta, CPoint pt) {
+    if (!m_verifyRunner && m_engine && m_engine->WantsKeyCodes()) {
+        m_wheelRest += zDelta;
+        for (; m_wheelRest >= WHEEL_DELTA; m_wheelRest -= WHEEL_DELTA)
+            m_engine->PostKey(0x96);
+        for (; m_wheelRest <= -WHEEL_DELTA; m_wheelRest += WHEEL_DELTA)
+            m_engine->PostKey(0x97);
+        return TRUE;
+    }
+    m_wheelRest = 0;
+    return CFrameWnd::OnMouseWheel(nFlags, zDelta, pt);
 }
 
 void CMainFrame::OnTimer(UINT_PTR nIDEvent) {

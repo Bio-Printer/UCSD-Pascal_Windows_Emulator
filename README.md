@@ -132,7 +132,7 @@ menu option.  Tiny-C: memleast_start(), memleast(), memleast_stop() in
 psys.h; the Tiny-C compiler's "(N words free)" after each pass is that
 pass's least, so the least of them is what the status bar shows.
 
-## Page Up ... Delete as one code each (version 2.00)
+## Page Up ... Delete and the mouse wheel as one code each (versions 2.00, 2.01)
 
 Page Up, Page Down, Home, End, Insert and Delete have no setting in
 SYSTEM.MISCINFO, so the emulator types the UCSD editor's own commands for
@@ -153,7 +153,13 @@ does not use it) is 25605, these keys send
 | Page Down | 0x89 |
 
 The program stores 25605 when it starts and 0 when it ends, so the editor
-and everything else get the keys as before. Tiny-C: `PX_KEYS` and
+and everything else get the keys as before.
+
+From version 2.01 the mouse wheel takes part too: while the word is 25605
+each notch away from you sends 0x96 and each notch towards you 0x97
+(finer wheels and touchpads add up to a notch first); otherwise the wheel
+sends nothing. Tiny-C: `KEY_WHEELUP` and `KEY_WHEELDN` in psys.h; vi
+scrolls 3 lines a notch (as ^Y / ^E), in command mode. Tiny-C: `PX_KEYS` and
 `KEY_HOME` ... `KEY_PGDN` in psys.h; vi (TOOLS:VI.CODE) does it, and its
 Page Up/Down page, Home/End go to the start/end of the line, Insert
 inserts and Delete deletes the character under the cursor.

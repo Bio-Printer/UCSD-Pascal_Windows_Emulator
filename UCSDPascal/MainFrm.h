@@ -32,6 +32,7 @@ protected:
     afx_msg void OnSize(UINT nType, int cx, int cy);
     afx_msg void OnChar(UINT nChar, UINT nRepCnt, UINT nFlags);
     afx_msg void OnKeyDown(UINT nChar, UINT nRepCnt, UINT nFlags);
+    afx_msg BOOL OnMouseWheel(UINT nFlags, short zDelta, CPoint pt);
     afx_msg void OnTimer(UINT_PTR nIDEvent);
     afx_msg void OnFileOpenBigDisk();
     afx_msg void OnFileOpenScratch();
@@ -125,6 +126,7 @@ private:
 
     // Verify P-System (see PSystemVerify.h and verify\README.md)
     std::unique_ptr<VerifyRunner> m_verifyRunner;   // non-null while a verification runs
+    int m_wheelRest = 0;                            // wheel movement not yet sent (OnMouseWheel)
     bool m_verifyRecord = false;                    // true: recording the reference log
     bool m_verifyReclaimed = false;                 // true: the reclaimed-memory layout and its own reference
     bool m_verifyScriptDone = false;
