@@ -306,7 +306,14 @@ void CMainFrame::OnPaint() {
             }
         }
 
-        if (!hasSel) {
+        if (!hasSel && m_engine->WantsBlockCursor()) {
+            // a block (a program asked: SYSCOM^.EXPANSION[1] = 25606): the
+            // cell XORed with green -- green ground, the character black
+            CBrush brush(RGB(0, 255, 0));
+            CBrush* pOldBrush = memDC.SelectObject(&brush);
+            memDC.PatBlt(cursorX * m_cellWidth, cursorY * m_cellHeight, m_cellWidth, m_cellHeight, PATINVERT);
+            memDC.SelectObject(pOldBrush);
+        } else if (!hasSel) {
             int cx0 = cursorX * m_cellWidth;
             int cy0 = cursorY * m_cellHeight + m_cellHeight - 2;
             CPen pen(PS_SOLID, 1, RGB(0, 255, 0));

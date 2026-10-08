@@ -180,6 +180,8 @@ public:
     // as one code each (Tiny-C's vi) sets SYSCOM^.EXPANSION[1] to 25605
     // (PX_KEYS in Tiny-C's psys.h) while it runs. See MainFrm OnKeyDown.
     bool WantsKeyCodes() const;
+    // 25606 (PX_KEYS_BLOCK) asks for the same keys and a block cursor (version 2.02).
+    bool WantsBlockCursor() const;
 
     // Verify P-System support (see verify/). IsWaitingForKey(): the system
     // is blocked in CONIN with nothing queued -- after a scripted run this

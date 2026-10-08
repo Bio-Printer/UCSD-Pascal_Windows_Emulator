@@ -159,7 +159,14 @@ From version 2.01 the mouse wheel takes part too: while the word is 25605
 each notch away from you sends 0x96 and each notch towards you 0x97
 (finer wheels and touchpads add up to a notch first); otherwise the wheel
 sends nothing. Tiny-C: `KEY_WHEELUP` and `KEY_WHEELDN` in psys.h; vi
-scrolls 3 lines a notch (as ^Y / ^E), in command mode. Tiny-C: `PX_KEYS` and
+scrolls 3 lines a notch (as ^Y / ^E), in command mode.
+
+From version 2.02 the word may also be 25606: the same keys and wheel, and
+the cursor drawn as a block (its cell inverted: green ground, the
+character black) instead of the line under it, so it is easy to find.
+When the program puts 0 back the cursor is a line again. Tiny-C:
+`PX_KEYS_BLOCK` in psys.h; vi asks for it (the shell, with 25605, does
+not). Tiny-C: `PX_KEYS` and
 `KEY_HOME` ... `KEY_PGDN` in psys.h; vi (TOOLS:VI.CODE) does it, and its
 Page Up/Down page, Home/End go to the start/end of the line, Insert
 inserts and Delete deletes the character under the cursor.

@@ -295,7 +295,14 @@ void PSystemEngine::DisableTrace() {
 // SYSCOM^.EXPANSION[1] (SYSCOM is at 0x02E4; EXPANSION[0] at +36) = 25605
 bool PSystemEngine::WantsKeyCodes() const {
     const uint16_t a = PM_V(0x030A);
-    return (uint16_t)(m_mem[a] | (m_mem[(uint16_t)(a + 1)] << 8)) == 25605;
+    const uint16_t v = (uint16_t)(m_mem[a] | (m_mem[(uint16_t)(a + 1)] << 8));
+    return v == 25605 || v == 25606;
+}
+
+// 25606: the keys as one code each, and the cursor as a block (version 2.02)
+bool PSystemEngine::WantsBlockCursor() const {
+    const uint16_t a = PM_V(0x030A);
+    return (uint16_t)(m_mem[a] | (m_mem[(uint16_t)(a + 1)] << 8)) == 25606;
 }
 
 void PSystemEngine::PostKey(uint8_t ch) {
