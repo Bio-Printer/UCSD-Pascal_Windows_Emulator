@@ -171,6 +171,29 @@ not). Tiny-C: `PX_KEYS` and
 Page Up/Down page, Home/End go to the start/end of the line, Insert
 inserts and Delete deletes the character under the cursor.
 
+## Scroll codes (version 2.03)
+
+A program that repaints a screen after it scrolled by moving the cursor and
+rewriting every row is slow. From version 2.03 the console scrolls on request.
+The program sets the word SYSCOM^.EXPANSION[1] to **25607** (the keys and the
+block cursor of 25606, and the scroll codes); the emulator answers by changing
+it to **25608**, so the program knows this emulator has them (an older one
+leaves 25607 and does not take the keys: the program then stores 25606
+instead). While the word is 25607 or 25608 the console takes (ESC is 27):
+
+| Sequence | Does |
+|---|---|
+| `ESC [ n S` | scroll the region up n lines (1 if n is left out): the rows move up, blank rows come in at the bottom |
+| `ESC [ n T` | scroll the region down n lines |
+| `ESC [ top ; bottom r` | the scroll region, rows counted from 1 (`ESC [ r`: the whole screen) |
+
+The cursor does not move; the screen starts with the whole screen as the
+region. (These are the ANSI / VT100 codes for scrolling, not the VT52's, which
+has none; the one-byte codes of the system's own console are unchanged.) Any
+other byte after ESC is an ordinary byte, as before. Tiny-C: `PX_KEYS_SCROLL`
+in psys.h; vi uses them for Page Down, Page Up and a cursor that scrolls the
+screen.
+
 ## Volume files changed while the emulator runs
 
 The emulator reads each volume image into memory when it mounts it and

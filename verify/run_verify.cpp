@@ -66,6 +66,7 @@ int main(int argc, char** argv) {
     const bool harvard = hv && *hv && strcmp(hv, "0") != 0;   // (unset, empty or 0: off)
     if (harvard) e.SetHarvard(true);
     e.SetConsoleCapture(true);
+    if (getenv("VERIFY_NOSCROLL")) e.SetScrollCodes(false);   // as an emulator before 2.03 (vi then repaints every row)
     // VERIFY_LOWWATER=1: the least free memory (SP - NP) of the run, and the step it was reached in;
     // =2: also each step's own least (tracking restarts at each step: the
     // instructions between a step's end and the restart, at most a poll's
@@ -75,12 +76,31 @@ int main(int argc, char** argv) {
     if (lowWater) e.SetLowWater(true);
     int lowWords = -1; std::string lowStep;
     VerifyRunner r(e, steps);
+    // VERIFY_SCREEN=file: the screen (the emulator's character grid, trailing blanks left
+    // out) each time the system waits for a key after the script typed another one, one
+    // after the other: "== key N (cursor x,y)", then its rows (a screen of Tiny-C's vi after
+    // every key can be compared between two builds of vi or of the emulator)
+    FILE* screenFile = getenv("VERIFY_SCREEN") ? fopen(getenv("VERIFY_SCREEN"), "wb") : nullptr;
+    size_t screenKeys = (size_t)-1;
+    auto dumpIfIdle = [&]() {
+        if (!screenFile || r.KeysTyped() == screenKeys || !e.IsWaitingForKey() || e.PendingKeyCount() != 0) return;
+        screenKeys = r.KeysTyped();
+        std::vector<uint8_t> g; int cx, cy;
+        e.SnapshotGrid(g, cx, cy);
+        fprintf(screenFile, "== key %zu (cursor %d,%d)\n", screenKeys, cx, cy);
+        for (int y = 0; y < TERM_ROWS; y++) {
+            int n = TERM_COLS;
+            while (n > 0 && g[(size_t)y * TERM_COLS + n - 1] == ' ') n--;
+            fwrite(&g[(size_t)y * TERM_COLS], 1, n, screenFile);
+            fputc('\n', screenFile);
+        }
+    };
     std::thread t([&] { e.RunLoop(); });
     auto t0 = std::chrono::steady_clock::now();
     VerifyRunner::State st;
     size_t lastStep = (size_t)-1;
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    while ((st = r.Poll()) == VerifyRunner::RUNNING) {
+    while ((st = (dumpIfIdle(), r.Poll())) == VerifyRunner::RUNNING) {
         if (e.VerifyMismatch()) break;                        // engine stopped at a verify mismatch
         if (!e.IsRunning()) { st = r.Poll(); break; }         // engine stopped (e.g. HALTED): let the script see it
         if (importStep >= 0 && !imported && r.StepIndex() >= (size_t)importStep) { imported = true; doImport(); }
@@ -126,6 +146,8 @@ int main(int argc, char** argv) {
         if (std::chrono::steady_clock::now() - t0 > std::chrono::seconds(maxSec)) { fprintf(stderr, "TIMEOUT\n"); break; }
         std::this_thread::sleep_for(std::chrono::microseconds(300));
     }
+    if (screenFile) fclose(screenFile);
+    if (getenv("VERIFY_SCREEN")) printf("scroll codes taken: %d\n", e.ScrollCodesTaken());
     // End the log at a precisely defined point: the script is done and the
     // system is blocked waiting for a key (no instruction is executing), so
     // every run's log ends at the same instruction. Only then stop -- which

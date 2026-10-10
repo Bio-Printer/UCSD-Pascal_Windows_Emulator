@@ -182,6 +182,16 @@ public:
     bool WantsKeyCodes() const;
     // 25606 (PX_KEYS_BLOCK) asks for the same keys and a block cursor (version 2.02).
     bool WantsBlockCursor() const;
+    // 25607 (PX_KEYS_SCROLL) asks for the same and for scroll codes (version 2.03):
+    // the engine answers by changing the word to 25608, so the program knows
+    // this emulator has them (another one leaves 25607).  While it is 25607 or
+    // 25608 the console takes  ESC [ n S  (scroll the region up n lines, 1 if
+    // no n), ESC [ n T (down) and  ESC [ top ; bottom r  (the region, rows from
+    // 1; ESC [ r: the whole screen); the cursor does not move.
+    bool WantsScrollCodes() const;
+    // false: behave like an emulator before 2.03 (25607 is not known: no handshake, no keys, no codes); verify tests
+    void SetScrollCodes(bool on) { m_scrollEnabled = on; }
+    int ScrollCodesTaken() const { return m_scrollCodes; }   // ESC [ n S / T taken so far (verify)
 
     // Verify P-System support (see verify/). IsWaitingForKey(): the system
     // is blocked in CONIN with nothing queued -- after a scripted run this
@@ -451,6 +461,13 @@ private:
     // little state machine for the CHR(1)+X+Y gotoxy sequence).
     int m_ctrlCharsLeft = 0;
     int m_ctrlParamX = 0;
+    int m_escState = 0;               // 1: after ESC, 2: in ESC [ (scroll codes)
+    int m_escNum[2] = {0, 0};         // its numbers, 0 = none given
+    int m_escNumCount = 0;
+    int m_scrollCodes = 0;
+    bool m_scrollEnabled = true;
+    int m_scrollTop = 0, m_scrollBot = TERM_ROWS - 1;   // the scroll region (rows from 0)
+    void ScrollRegion(int n);         // n > 0 up, n < 0 down; holds m_gridLock
 
     // Keyboard queue, protected by m_keyLock; m_keyAvailable is signaled
     // whenever the queue becomes non-empty, so CONIN can block on it.

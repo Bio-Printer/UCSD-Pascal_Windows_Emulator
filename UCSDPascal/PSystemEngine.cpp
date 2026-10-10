@@ -296,13 +296,22 @@ void PSystemEngine::DisableTrace() {
 bool PSystemEngine::WantsKeyCodes() const {
     const uint16_t a = PM_V(0x030A);
     const uint16_t v = (uint16_t)(m_mem[a] | (m_mem[(uint16_t)(a + 1)] << 8));
-    return v == 25605 || v == 25606;
+    return v == 25605 || v == 25606 || (m_scrollEnabled && (v == 25607 || v == 25608));
 }
 
-// 25606: the keys as one code each, and the cursor as a block (version 2.02)
+// 25606: the keys as one code each, and the cursor as a block (version 2.02);
+// 25607 / 25608 also scroll codes (version 2.03)
 bool PSystemEngine::WantsBlockCursor() const {
     const uint16_t a = PM_V(0x030A);
-    return (uint16_t)(m_mem[a] | (m_mem[(uint16_t)(a + 1)] << 8)) == 25606;
+    const uint16_t v = (uint16_t)(m_mem[a] | (m_mem[(uint16_t)(a + 1)] << 8));
+    return v == 25606 || (m_scrollEnabled && (v == 25607 || v == 25608));
+}
+
+bool PSystemEngine::WantsScrollCodes() const {
+    if (!m_scrollEnabled) return false;
+    const uint16_t a = PM_V(0x030A);
+    const uint16_t v = (uint16_t)(m_mem[a] | (m_mem[(uint16_t)(a + 1)] << 8));
+    return v == 25607 || v == 25608;
 }
 
 void PSystemEngine::PostKey(uint8_t ch) {
@@ -450,12 +459,55 @@ void PSystemEngine::ScrollIfNeeded() {
     }
 }
 
+// n > 0: the rows of the scroll region move up n lines, blank lines come in at
+// the bottom; n < 0: down.  The cursor stays where it is.
+void PSystemEngine::ScrollRegion(int n) {
+    const int top = m_scrollTop, bot = m_scrollBot, rows = bot - top + 1;
+    if (rows <= 0 || n == 0) return;
+    const size_t rb = (size_t)TERM_COLS;
+    int k = n > 0 ? n : -n;
+    if (k > rows) k = rows;
+    uint8_t* g = m_grid.data();
+    if (n > 0) {
+        memmove(g + (size_t)top * rb, g + (size_t)(top + k) * rb, (size_t)(rows - k) * rb);
+        memset(g + (size_t)(bot - k + 1) * rb, ' ', (size_t)k * rb);
+    } else {
+        memmove(g + (size_t)(top + k) * rb, g + (size_t)top * rb, (size_t)(rows - k) * rb);
+        memset(g + (size_t)top * rb, ' ', (size_t)k * rb);
+    }
+}
+
 // Mirrors vt100ConOut's control-code table exactly, but instead of
 // emitting ANSI escapes, directly manipulates the internal grid/cursor.
 void PSystemEngine::PutChar(uint8_t v) {
     EnterCriticalSection(&m_gridLock);
     if (m_captureConsole) m_consoleCapture.push_back((char)v);
 
+    if (m_escState) {                       // ESC [ n S, ESC [ n T, ESC [ t ; b r (version 2.03)
+        if (m_escState == 1) {
+            if (v == '[') { m_escState = 2; m_escNum[0] = m_escNum[1] = 0; m_escNumCount = 0; LeaveCriticalSection(&m_gridLock); return; }
+            m_escState = 0;                 // not a scroll code: the byte is an ordinary one
+        } else {
+            if (v >= '0' && v <= '9') {
+                if (m_escNumCount == 0) m_escNumCount = 1;
+                int& n = m_escNum[m_escNumCount - 1];
+                if (n < 1000) n = n * 10 + (v - '0');
+            } else if (v == ';') { if (m_escNumCount == 0) m_escNumCount = 1; if (m_escNumCount < 2) m_escNumCount = 2; }
+            else {                          // the final byte
+                m_escState = 0;
+                if (v == 'S' || v == 'T') { m_scrollCodes++; ScrollRegion((v == 'S' ? 1 : -1) * (m_escNum[0] ? m_escNum[0] : 1)); }
+                else if (v == 'r') {
+                    int t = m_escNum[0] ? m_escNum[0] : 1, b = m_escNum[1] ? m_escNum[1] : TERM_ROWS;
+                    if (t < 1) t = 1;
+                    if (b > TERM_ROWS) b = TERM_ROWS;
+                    if (t >= b) { t = 1; b = TERM_ROWS; }
+                    m_scrollTop = t - 1; m_scrollBot = b - 1;
+                }
+            }
+            LeaveCriticalSection(&m_gridLock);
+            return;
+        }
+    }
     if (m_ctrlCharsLeft == 2) { m_ctrlParamX = v; m_ctrlCharsLeft = 1; LeaveCriticalSection(&m_gridLock); return; }
     if (m_ctrlCharsLeft == 1) {
         int x = m_ctrlParamX - 32, y = v - 32;
@@ -490,6 +542,7 @@ void PSystemEngine::PutChar(uint8_t v) {
             case 10: m_cursorY++; ScrollIfNeeded(); break;          // linefeed
             case 12: memset(m_grid.data(), ' ', m_grid.size()); m_cursorX = 0; m_cursorY = 0; break; // clear screen + home
             case 13: m_cursorX = 0; break;                          // CR
+            case 27: if (WantsScrollCodes()) m_escState = 1; break; // ESC: scroll codes follow (version 2.03)
             case 14: case 15: break;                                // normal/reverse video: no attribute grid yet, ignore
             default: break;
         }
@@ -2312,6 +2365,10 @@ void PSystemEngine::RunLoop() {
         };
         auto logPcodeAtBack = [&]() {
             if (m_cpu.r.PC != 0x03B0) return;
+            {                                       // 25607 asked for scroll codes: 25608 answers (version 2.03)
+                const uint16_t a = PM_V(0x030A);
+                if (m_scrollEnabled && rd16(a) == 25607) { m_mem[a] = (uint8_t)(25608 & 255); m_mem[(uint16_t)(a + 1)] = (uint8_t)(25608 >> 8); }
+            }
             {                                       // the program's own least free memory (kProgLowWaterAddr)
                 const uint16_t a = PM_V(kProgLowWaterAddr);
                 const uint16_t w = rd16(a);
