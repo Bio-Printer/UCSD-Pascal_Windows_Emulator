@@ -296,7 +296,7 @@ void PSystemEngine::DisableTrace() {
 bool PSystemEngine::WantsKeyCodes() const {
     const uint16_t a = PM_V(0x030A);
     const uint16_t v = (uint16_t)(m_mem[a] | (m_mem[(uint16_t)(a + 1)] << 8));
-    return v == 25605 || v == 25606 || (m_scrollEnabled && (v == 25607 || v == 25608));
+    return v == 25605 || v == 25606 || (m_scrollEnabled && (v == 25607 || v == 25608 || v == 25609 || v == 25610));
 }
 
 // 25606: the keys as one code each, and the cursor as a block (version 2.02);
@@ -304,19 +304,32 @@ bool PSystemEngine::WantsKeyCodes() const {
 bool PSystemEngine::WantsBlockCursor() const {
     const uint16_t a = PM_V(0x030A);
     const uint16_t v = (uint16_t)(m_mem[a] | (m_mem[(uint16_t)(a + 1)] << 8));
-    return v == 25606 || (m_scrollEnabled && (v == 25607 || v == 25608));
+    return v == 25606 || (m_scrollEnabled && (v == 25607 || v == 25608 || v == 25609 || v == 25610));
 }
 
 bool PSystemEngine::WantsScrollCodes() const {
     if (!m_scrollEnabled) return false;
     const uint16_t a = PM_V(0x030A);
     const uint16_t v = (uint16_t)(m_mem[a] | (m_mem[(uint16_t)(a + 1)] << 8));
-    return v == 25607 || v == 25608;
+    return v == 25607 || v == 25608 || v == 25609 || v == 25610;
+}
+
+// 25609 (PX_KEYS_AHEAD) / 25610 (version 2.04): the number of keys waiting (not yet
+// read by the program), up to 255, in EXPANSION[2], which the program can read at
+// any time (UNITBUSY is always false here).  Called with m_keyLock held.
+void PSystemEngine::PublishKeyCount() {
+    const uint16_t a = PM_V(0x030A);
+    const uint16_t v = (uint16_t)(m_mem[a] | (m_mem[(uint16_t)(a + 1)] << 8));
+    if (!m_scrollEnabled || (v != 25609 && v != 25610)) return;
+    const size_t n = m_keyQueue.size();
+    m_mem[(uint16_t)(a + 2)] = (uint8_t)(n > 255 ? 255 : n);
+    m_mem[(uint16_t)(a + 3)] = 0;
 }
 
 void PSystemEngine::PostKey(uint8_t ch) {
     EnterCriticalSection(&m_keyLock);
     m_keyQueue.push_back(ch);
+    PublishKeyCount();
     LeaveCriticalSection(&m_keyLock);
     SetEvent(m_keyAvailable);
 }
@@ -1676,6 +1689,7 @@ uint8_t PSystemEngine::PortIn(uint8_t port) {
                     uint8_t v = m_keyQueue.front();
                     m_keyQueue.erase(m_keyQueue.begin());
                     bool stillHas = !m_keyQueue.empty();
+                    PublishKeyCount();
                     if (!stillHas) ResetEvent(m_keyAvailable);
                     LeaveCriticalSection(&m_keyLock);
                     if (m_tracing && m_traceFile)
@@ -2368,6 +2382,10 @@ void PSystemEngine::RunLoop() {
             {                                       // 25607 asked for scroll codes: 25608 answers (version 2.03)
                 const uint16_t a = PM_V(0x030A);
                 if (m_scrollEnabled && rd16(a) == 25607) { m_mem[a] = (uint8_t)(25608 & 255); m_mem[(uint16_t)(a + 1)] = (uint8_t)(25608 >> 8); }
+                if (m_scrollEnabled && rd16(a) == 25609) {      // + the count of keys waiting (version 2.04)
+                    m_mem[a] = (uint8_t)(25610 & 255); m_mem[(uint16_t)(a + 1)] = (uint8_t)(25610 >> 8);
+                    EnterCriticalSection(&m_keyLock); PublishKeyCount(); LeaveCriticalSection(&m_keyLock);
+                }
             }
             {                                       // the program's own least free memory (kProgLowWaterAddr)
                 const uint16_t a = PM_V(kProgLowWaterAddr);

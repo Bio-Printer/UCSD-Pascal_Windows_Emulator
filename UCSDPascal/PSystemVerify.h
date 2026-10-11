@@ -165,9 +165,14 @@ public:
                 return RUNNING;
             }
             if (!idle) return RUNNING;
-            m_e.PostKey((uint8_t)s.text[m_typed]);
-            m_keysTyped++;
-            if (++m_typed == s.text.size()) { m_typed = 0; m_step++; }
+            // VERIFY_BURST=1: the rest of this TYPE at once, as a person typing faster than the
+            // program reads (type-ahead; not deterministic: the program sees the keys queued)
+            static const bool burst = getenv("VERIFY_BURST") != nullptr;
+            do {
+                m_e.PostKey((uint8_t)s.text[m_typed]);
+                m_keysTyped++;
+            } while (++m_typed < s.text.size() && burst);
+            if (m_typed == s.text.size()) { m_typed = 0; m_step++; }
             return RUNNING;
         }
         return m_state = DONE;

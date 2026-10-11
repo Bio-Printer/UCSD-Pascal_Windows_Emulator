@@ -194,6 +194,18 @@ other byte after ESC is an ordinary byte, as before. Tiny-C: `PX_KEYS_SCROLL`
 in psys.h; vi uses them for Page Down, Page Up and a cursor that scrolls the
 screen.
 
+## Keys waiting (version 2.04)
+
+A program cannot see the keys typed ahead (UNITBUSY is always false here), so it cannot
+know it is behind the typist.  From version 2.04 the program sets
+SYSCOM^.EXPANSION[1] to **25609** (everything 25607 asks for, and the count of keys
+waiting); the emulator answers **25610** and keeps the number of keys not yet read by
+the program (0..255) in SYSCOM^.EXPANSION[2], updated as keys arrive from Windows and as the
+program reads them.  An older emulator leaves 25609: the program then stores 25607.
+Tiny-C: `PX_KEYS_AHEAD` / `PX_AHEAD_OK` in psys.h; vi paints the screen only when no key
+is waiting (typing, `j`, the mouse wheel: one repaint after a burst).  The verify runner
+types a whole TYPE at once with `VERIFY_BURST=1`.
+
 ## Volume files changed while the emulator runs
 
 The emulator reads each volume image into memory when it mounts it and

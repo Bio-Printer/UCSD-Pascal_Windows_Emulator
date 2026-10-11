@@ -176,6 +176,7 @@ public:
     // command set doesn't need them beyond what already maps to plain
     // ASCII control codes (ESC, CR, BS, etc.).
     void PostKey(uint8_t ch);
+    void PublishKeyCount();     // 25609 / 25610: the keys waiting, in EXPANSION[2] (version 2.04); m_keyLock held
     // A program that wants Page Up, Page Down, Home, End, Insert and Delete
     // as one code each (Tiny-C's vi) sets SYSCOM^.EXPANSION[1] to 25605
     // (PX_KEYS in Tiny-C's psys.h) while it runs. See MainFrm OnKeyDown.
