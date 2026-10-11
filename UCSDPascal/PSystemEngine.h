@@ -176,6 +176,9 @@ public:
     // command set doesn't need them beyond what already maps to plain
     // ASCII control codes (ESC, CR, BS, etc.).
     void PostKey(uint8_t ch);
+    bool IsBreakKey(uint8_t ch);     // version 2.05: see PSystemEngine.cpp
+    void NoteKeyRead();
+    void SetBreakQuietMs(long long ms) { m_breakQuietMs = ms; }   // verify tests
     void PublishKeyCount();     // 25609 / 25610: the keys waiting, in EXPANSION[2] (version 2.04); m_keyLock held
     // A program that wants Page Up, Page Down, Home, End, Insert and Delete
     // as one code each (Tiny-C's vi) sets SYSCOM^.EXPANSION[1] to 25605
@@ -484,6 +487,9 @@ private:
 
     volatile bool m_running = false;
     volatile bool m_waitingForKey = false;
+    std::atomic<bool> m_breakPending{ false };
+    std::atomic<long long> m_lastKeyRead{ 0 };    // steady clock, ms: when the program last read a key
+    long long m_breakQuietMs = 1500;              // the break key counts after this long without a read
     bool m_captureConsole = false;
     std::string m_consoleCapture;
     volatile bool m_halted = false;

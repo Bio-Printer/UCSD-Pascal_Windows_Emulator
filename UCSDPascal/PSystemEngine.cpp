@@ -326,7 +326,24 @@ void PSystemEngine::PublishKeyCount() {
     m_mem[(uint16_t)(a + 3)] = 0;
 }
 
+// The break key (SYSCOM^.CRTINFO.BREAK, set with SETUP in SYSTEM.MISCINFO; version 2.05): typed
+// while a program runs and has not asked for a key for m_breakQuietMs, it is not a key: the
+// next P-code instruction becomes the run-time error "User break" (UBREAK, 0x0403).  A key
+// typed while the program waits for one, or soon after it read one (a busy editor), is an
+// ordinary key.  MISCINFO.NOBREAK (bit 6) switches it off (the Filer's Krunch does).
+bool PSystemEngine::IsBreakKey(uint8_t ch) {
+    const uint8_t brk = m_mem[PM_V(0x0338)];                    // SYSCOM + 84: CRTINFO.BREAK
+    if (brk == 0 || ch != brk || (m_mem[PM_V(0x031E)] & 0x40) || m_waitingForKey) return false;  // MISCINFO at SYSCOM + 58
+    const long long now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    return now - m_lastKeyRead.load() >= m_breakQuietMs;
+}
+
+void PSystemEngine::NoteKeyRead() {
+    m_lastKeyRead = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
 void PSystemEngine::PostKey(uint8_t ch) {
+    if (IsBreakKey(ch)) { m_breakPending = true; return; }
     EnterCriticalSection(&m_keyLock);
     m_keyQueue.push_back(ch);
     PublishKeyCount();
@@ -1688,6 +1705,7 @@ uint8_t PSystemEngine::PortIn(uint8_t port) {
                 if (!m_keyQueue.empty()) {
                     uint8_t v = m_keyQueue.front();
                     m_keyQueue.erase(m_keyQueue.begin());
+                    NoteKeyRead();
                     bool stillHas = !m_keyQueue.empty();
                     PublishKeyCount();
                     if (!stillHas) ResetEvent(m_keyAvailable);
@@ -1707,6 +1725,7 @@ uint8_t PSystemEngine::PortIn(uint8_t port) {
                 m_waitingForKey = true;
                 DWORD r = WaitForMultipleObjects(2, handles, FALSE, INFINITE);
                 m_waitingForKey = false;
+                NoteKeyRead();
                 if (r == WAIT_OBJECT_0) return 0x00; // stopping
                 // else loop back and consume the key we were signaled for
             }
@@ -2386,6 +2405,12 @@ void PSystemEngine::RunLoop() {
                     m_mem[a] = (uint8_t)(25610 & 255); m_mem[(uint16_t)(a + 1)] = (uint8_t)(25610 >> 8);
                     EnterCriticalSection(&m_keyLock); PublishKeyCount(); LeaveCriticalSection(&m_keyLock);
                 }
+            }
+            if (m_breakPending.exchange(false)) {   // the break key (version 2.05): "User break" at this instruction
+                const uint16_t bc = m_cpu.r.BC();
+                m_mem[PM_V(0x0246)] = bc & 0xFF; m_mem[PM_V(0x0247)] = bc >> 8;     // SAVIPC
+                m_cpu.r.PC = 0x0403;                                                 // UBREAK: LD L,8; JP XEQERR
+                return;
             }
             {                                       // the program's own least free memory (kProgLowWaterAddr)
                 const uint16_t a = PM_V(kProgLowWaterAddr);

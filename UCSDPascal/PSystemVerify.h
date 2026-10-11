@@ -7,6 +7,8 @@
 //   WAIT "text"               wait until this text appears in the console
 //                             output (searching after the previous WAIT)
 //   TYPE "keys"               type these keys
+//   TYPENOW "keys"            type these keys at once, not when the system waits for input
+//                             (the break key: the program must be running)
 //   HALTED                    the P-System must halt here (it reaches ABORT:
 //                             its main program ended) -- the end of a script
 //   Escapes inside "...":  \r  carriage return    \e  ESC    \\  \"
@@ -78,6 +80,7 @@ struct VerifyStep {
     enum Kind { WAIT, TYPE, HALTED } kind;
     std::string text;
     int line;
+    bool now = false;       // TYPENOW
 };
 
 inline bool ParseVerifyScript(const std::string& src, std::vector<VerifyStep>& out, std::string& err) {
@@ -105,6 +108,7 @@ inline bool ParseVerifyScript(const std::string& src, std::vector<VerifyStep>& o
         }
         if (word == "WAIT") st.kind = VerifyStep::WAIT;
         else if (word == "TYPE") st.kind = VerifyStep::TYPE;
+        else if (word == "TYPENOW") { st.kind = VerifyStep::TYPE; st.now = true; }
         else { err = "line " + std::to_string(lineNo) + ": expected WAIT, TYPE or HALTED, found '" + word + "'"; return false; }
         while (i < line.size() && (line[i] == ' ' || line[i] == '\t')) i++;
         if (i >= line.size() || line[i] != '"') { err = "line " + std::to_string(lineNo) + ": missing opening quote"; return false; }
@@ -164,7 +168,7 @@ public:
                 if (idle) return Fail("expected \"" + Printable(s.text) + "\" but the system is waiting for input");
                 return RUNNING;
             }
-            if (!idle) return RUNNING;
+            if (!idle && !s.now) return RUNNING;
             // VERIFY_BURST=1: the rest of this TYPE at once, as a person typing faster than the
             // program reads (type-ahead; not deterministic: the program sees the keys queued)
             do {

@@ -76,6 +76,7 @@ int main(int argc, char** argv) {
     if (lowWater) e.SetLowWater(true);
     int lowWords = -1; std::string lowStep;
     VerifyRunner r(e, steps);
+    if (getenv("VERIFY_BREAKQUIET")) e.SetBreakQuietMs(atoll(getenv("VERIFY_BREAKQUIET")));   // ms without a key read before the break key counts
     if (getenv("VERIFY_BURST")) r.SetBurst(true);    // a TYPE is posted at once (type-ahead)
     // VERIFY_SCREEN=file: the screen (the emulator's character grid, trailing blanks left
     // out) each time the system waits for a key after the script typed another one, one

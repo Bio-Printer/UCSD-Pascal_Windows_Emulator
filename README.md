@@ -206,6 +206,18 @@ Tiny-C: `PX_KEYS_AHEAD` / `PX_AHEAD_OK` in psys.h; vi paints the screen only whe
 is waiting (typing, `j`, the mouse wheel: one repaint after a burst).  The verify runner
 types a whole TYPE at once with `VERIFY_BURST=1`.
 
+## The break key (version 2.05)
+
+The system's break key (`CRTINFO.BREAK` in SYSTEM.MISCINFO, set with SETUP) did nothing: the
+interpreter has the run-time error 8, "User break" (`UBREAK`), but nothing called it.  From
+version 2.05 a key typed while a program is running and has not read a key for 1.5 seconds,
+if it is the break character and `MISCINFO.NOBREAK` is not set, is not a key: at the next
+P-code instruction the system takes the error, "Program interrupted by user", and returns to
+the command level (a long library call, such as a big block move, finishes first).  A key
+typed while the program waits for one, or soon after it read one (a busy editor), is an
+ordinary key.  BIGGY 1.24 has the backquote (`` ` ``) as its break key.  The verify runner
+has `TYPENOW "keys"` (type at once, while the program runs) and `VERIFY_BREAKQUIET=ms`.
+
 ## Volume files changed while the emulator runs
 
 The emulator reads each volume image into memory when it mounts it and
