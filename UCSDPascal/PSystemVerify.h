@@ -167,11 +167,10 @@ public:
             if (!idle) return RUNNING;
             // VERIFY_BURST=1: the rest of this TYPE at once, as a person typing faster than the
             // program reads (type-ahead; not deterministic: the program sees the keys queued)
-            static const bool burst = getenv("VERIFY_BURST") != nullptr;
             do {
                 m_e.PostKey((uint8_t)s.text[m_typed]);
                 m_keysTyped++;
-            } while (++m_typed < s.text.size() && burst);
+            } while (++m_typed < s.text.size() && m_burst);
             if (m_typed == s.text.size()) { m_typed = 0; m_step++; }
             return RUNNING;
         }
@@ -181,6 +180,7 @@ public:
     size_t StepIndex() const { return m_step; }
     size_t StepCount() const { return m_steps.size(); }
     size_t KeysTyped() const { return m_keysTyped; }
+    void SetBurst(bool on) { m_burst = on; }   // VERIFY_BURST (run_verify.cpp)
     const std::string& Error() const { return m_error; }
     const std::string& Transcript() const { return m_out; }
     std::string CurrentStepText() const {
@@ -211,6 +211,7 @@ private:
     PSystemEngine& m_e;
     std::vector<VerifyStep> m_steps;
     size_t m_step = 0, m_typed = 0, m_from = 0, m_keysTyped = 0;
+    bool m_burst = false;
     std::string m_out, m_error;
     State m_state = RUNNING;
 };
