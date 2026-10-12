@@ -641,7 +641,9 @@ void CMainFrame::UpdateStatusBarText() {
     if (m_engine->HasHalted()) {
         text = L"System halted.";
     } else if (m_engine->IsRunning()) {
-        text = m_paused ? L"Paused -- Options > Resume to continue" : (m_traceEnabled ? L"Running (tracing to trace.txt)" : L"Running");
+        text = m_paused ? L"Paused -- Options > Resume to continue"
+                       : (m_engine->OutputStopped() ? L"Output stopped (^S) -- ^Q goes on"
+                                                    : (m_traceEnabled ? L"Running (tracing to trace.txt)" : L"Running"));
         if (m_lowWater && m_engine->LowWaterOn()) {          // Options > Track Least Free Memory
             const int least = m_engine->LowWaterWords(), now = m_engine->LowWaterNowWords();
             CString lw;

@@ -342,8 +342,27 @@ void PSystemEngine::NoteKeyRead() {
     m_lastKeyRead = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
+// Output flow control (version 2.06): the stop key (SYSCOM^.CRTINFO.STOP, ^S in BIGGY's
+// SYSTEM.MISCINFO) typed while the program is not waiting for a key stops its console output
+// -- the program waits in its next CONOUT -- and ^Q (the key the arrows' Left also sends) starts it
+// again.  Neither is a key for the program then; typed while it waits for a key, both are keys.
+bool PSystemEngine::FlowKey(uint8_t ch) {
+    if (m_waitingForKey) return false;
+    const uint8_t stopKey = m_mem[PM_V(0x0339)];                // SYSCOM + 85: CRTINFO.STOP
+    if (stopKey != 0 && ch == stopKey) { m_outStopped = true; return true; }
+    if (ch == 0x11 && m_outStopped.load()) { m_outStopped = false; return true; }
+    return false;
+}
+
+void PSystemEngine::OutputWait() {
+    while (m_outStopped.load()) {
+        if (WaitForSingleObject(m_stopEvent, 20) == WAIT_OBJECT_0) { m_outStopped = false; break; }
+    }
+}
+
 void PSystemEngine::PostKey(uint8_t ch) {
     if (IsBreakKey(ch)) { m_breakPending = true; return; }
+    if (FlowKey(ch)) return;
     EnterCriticalSection(&m_keyLock);
     m_keyQueue.push_back(ch);
     PublishKeyCount();
@@ -1765,6 +1784,7 @@ uint8_t PSystemEngine::PortIn(uint8_t port) {
 void PSystemEngine::PortOut(uint8_t port, uint8_t v) {
     switch (port) {
         case 1:
+            if (m_outStopped.load()) OutputWait();
             PutChar(v);
             if (m_tracing && m_traceFile)
                 fprintf(m_traceFile, "[CONSOLE @instr %ld] '%c' (0x%02X)\n",

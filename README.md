@@ -218,6 +218,15 @@ typed while the program waits for one, or soon after it read one (a busy editor)
 ordinary key.  BIGGY 1.24 has the backquote (`` ` ``) as its break key.  The verify runner
 has `TYPENOW "keys"` (type at once, while the program runs) and `VERIFY_BREAKQUIET=ms`.
 
+## Ctrl-S and Ctrl-Q stop and start the console output (version 2.06)
+
+A long printout can be held: the stop key (`CRTINFO.STOP` in SYSTEM.MISCINFO, ^S on BIGGY) typed while a
+program is running and not waiting for a key stops its console output -- the program waits in its next
+write -- and ^Q starts it again (the arrow keys' Left sends ^Q too).  They are not keys for the program
+then; typed while it waits for a key, both are ordinary keys, as before.  The status bar says
+"Output stopped (^S) -- ^Q goes on".  The verify runner has `QUIET "ms"`: the console output must not
+grow for that long.
+
 ## Volume files changed while the emulator runs
 
 The emulator reads each volume image into memory when it mounts it and

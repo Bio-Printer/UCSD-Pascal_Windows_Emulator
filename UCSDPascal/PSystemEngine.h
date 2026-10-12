@@ -176,6 +176,9 @@ public:
     // command set doesn't need them beyond what already maps to plain
     // ASCII control codes (ESC, CR, BS, etc.).
     void PostKey(uint8_t ch);
+    bool FlowKey(uint8_t ch);        // version 2.06: ^S / ^Q stop and start the console output
+    void OutputWait();
+    bool OutputStopped() const { return m_outStopped.load(); }
     bool IsBreakKey(uint8_t ch);     // version 2.05: see PSystemEngine.cpp
     void NoteKeyRead();
     void SetBreakQuietMs(long long ms) { m_breakQuietMs = ms; }   // verify tests
@@ -488,6 +491,7 @@ private:
     volatile bool m_running = false;
     volatile bool m_waitingForKey = false;
     std::atomic<bool> m_breakPending{ false };
+    std::atomic<bool> m_outStopped{ false };     // ^S: CONOUT waits until ^Q
     std::atomic<long long> m_lastKeyRead{ 0 };    // steady clock, ms: when the program last read a key
     long long m_breakQuietMs = 1500;              // the break key counts after this long without a read
     bool m_captureConsole = false;

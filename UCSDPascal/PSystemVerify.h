@@ -9,6 +9,8 @@
 //   TYPE "keys"               type these keys
 //   TYPENOW "keys"            type these keys at once, not when the system waits for input
 //                             (the break key: the program must be running)
+//   QUIET ms                  the console output must not grow for ms (after 200 ms for what was
+//                             on its way): ^S stopped it
 //   HALTED                    the P-System must halt here (it reaches ABORT:
 //                             its main program ended) -- the end of a script
 //   Escapes inside "...":  \r  carriage return    \e  ESC    \\  \"
@@ -30,6 +32,7 @@
 // instead of typing into the wrong prompt.
 #pragma once
 #include <string>
+#include <chrono>
 #include <vector>
 #include <cstdint>
 #include <cstdio>
@@ -77,7 +80,7 @@ inline bool PrepareVerifyDisks(const std::filesystem::path& bootDisk, const std:
 }
 
 struct VerifyStep {
-    enum Kind { WAIT, TYPE, HALTED } kind;
+    enum Kind { WAIT, TYPE, HALTED, QUIET } kind;
     std::string text;
     int line;
     bool now = false;       // TYPENOW
@@ -109,6 +112,7 @@ inline bool ParseVerifyScript(const std::string& src, std::vector<VerifyStep>& o
         if (word == "WAIT") st.kind = VerifyStep::WAIT;
         else if (word == "TYPE") st.kind = VerifyStep::TYPE;
         else if (word == "TYPENOW") { st.kind = VerifyStep::TYPE; st.now = true; }
+        else if (word == "QUIET") st.kind = VerifyStep::QUIET;
         else { err = "line " + std::to_string(lineNo) + ": expected WAIT, TYPE or HALTED, found '" + word + "'"; return false; }
         while (i < line.size() && (line[i] == ' ' || line[i] == '\t')) i++;
         if (i >= line.size() || line[i] != '"') { err = "line " + std::to_string(lineNo) + ": missing opening quote"; return false; }
@@ -168,6 +172,16 @@ public:
                 if (idle) return Fail("expected \"" + Printable(s.text) + "\" but the system is waiting for input");
                 return RUNNING;
             }
+            if (s.kind == VerifyStep::QUIET) {
+                const auto now = std::chrono::steady_clock::now();
+                const long long ms = atoll(s.text.c_str());
+                if (!m_quietOn) { m_quietOn = true; m_quietStart = now; m_quietSize = 0; return RUNNING; }
+                const long long el = std::chrono::duration_cast<std::chrono::milliseconds>(now - m_quietStart).count();
+                if (el < 200) { m_quietSize = m_out.size(); return RUNNING; }      // what was on its way
+                if (m_out.size() != m_quietSize) return Fail("the console output went on");
+                if (el < 200 + ms) return RUNNING;
+                m_quietOn = false; m_step++; continue;
+            }
             if (!idle && !s.now) return RUNNING;
             // VERIFY_BURST=1: the rest of this TYPE at once, as a person typing faster than the
             // program reads (type-ahead; not deterministic: the program sees the keys queued)
@@ -216,6 +230,9 @@ private:
     std::vector<VerifyStep> m_steps;
     size_t m_step = 0, m_typed = 0, m_from = 0, m_keysTyped = 0;
     bool m_burst = false;
+    bool m_quietOn = false;
+    std::chrono::steady_clock::time_point m_quietStart;
+    size_t m_quietSize = 0;
     std::string m_out, m_error;
     State m_state = RUNNING;
 };
