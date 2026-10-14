@@ -31,14 +31,45 @@ int main(int argc, char** argv) {
             if (!e.MountUnit(u, W(p), uerr)) { fprintf(stderr, "cannot mount unit #%d\n", u); return 2; }
         }
     }
-    // VERIFY_IMPORT="unit:path": Options > Import File, before booting -- or,
+    // "unit" or "unit/A/B" (sub-volume A/B on it, as Options > Import and
+    // Export offer them): the unit, and the sub-volume's first block (0: the
+    // volume); false if there is no such sub-volume
+    auto where = [&](const std::string& spec, int& unit, uint16_t& base) {
+        size_t sl = spec.find('/');
+        unit = atoi(spec.substr(0, sl).c_str());
+        base = 0;
+        if (sl == std::string::npos) return true;
+        std::wstring path = W(spec.substr(sl + 1));
+        for (auto& c : path) c = (wchar_t)towupper(c);
+        for (auto& sv : e.GetSubVolumes(unit))
+            if (sv.path == path) { base = sv.base; return true; }
+        return false;
+    };
+    // VERIFY_IMPORT="unit[/A/B]:path": Options > Import File, before booting -- or,
     // with VERIFY_IMPORT_STEP=n, while the system runs, when the script
     // reaches step n (counting from 0)
     auto doImport = [&]() {
         const char* imp = getenv("VERIFY_IMPORT");
         std::string spec = imp; size_t c = spec.find(':');
-        std::wstring ierr = e.ImportFileToVolume(atoi(spec.substr(0, c).c_str()), W(spec.substr(c + 1)));
+        int unit; uint16_t base;
+        std::wstring ierr = where(spec.substr(0, c), unit, base)
+            ? e.ImportFileToVolume(unit, W(spec.substr(c + 1)), base) : L"no such sub-volume";
         fprintf(stderr, "import %s: %s\n", imp, ierr.empty() ? "OK" : std::string(ierr.begin(), ierr.end()).c_str());
+    };
+    // VERIFY_EXPORT="unit[/A/B]:NAME:path": Options > Export File, when the
+    // script has ended; VERIFY_SUBVOLS=1 lists GetSubVolumes of every unit then
+    auto doExport = [&]() {
+        if (getenv("VERIFY_SUBVOLS"))
+            for (int u : { 4, 5, 9, 10, 11, 12, 13, 14 })
+                for (auto& sv : e.GetSubVolumes(u))
+                    fprintf(stderr, "subvolume #%d:/%s at block %u\n", u, std::string(sv.path.begin(), sv.path.end()).c_str(), (unsigned)sv.base);
+        const char* exp = getenv("VERIFY_EXPORT");
+        if (!exp) return;
+        std::string spec = exp; size_t c = spec.find(':'), c2 = spec.find(':', c + 1);
+        int unit; uint16_t base;
+        std::wstring xerr = where(spec.substr(0, c), unit, base)
+            ? e.ExportFileFromVolume(unit, W(spec.substr(c + 1, c2 - c - 1)), W(spec.substr(c2 + 1)), base) : L"no such sub-volume";
+        fprintf(stderr, "export %s: %s\n", exp, xerr.empty() ? "OK" : std::string(xerr.begin(), xerr.end()).c_str());
     };
     const long importStep = getenv("VERIFY_IMPORT") && getenv("VERIFY_IMPORT_STEP") ? atol(getenv("VERIFY_IMPORT_STEP")) : -1;
     if (getenv("VERIFY_IMPORT") && importStep < 0) doImport();
@@ -189,6 +220,7 @@ int main(int argc, char** argv) {
                                          e.HarvardActive() ? "yes" : "NO", e.HarvardCodeSegments(), (unsigned)e.HarvardCodeFree());
     if (getenv("VERIFY_RECLAIM")) printf("interpreter memory reclaimed: %s%s%s\n", e.InterpreterMemoryReclaimed() ? "yes" : "NO",
                                           e.ReclaimFault().empty() ? "" : " -- STOPPED: ", e.ReclaimFault().c_str());
+    doExport();
     if (e.VerifyMismatch()) { printf("VERIFY MISMATCH after %.1f s:\n%s\n", el, e.VerifyMismatchText().c_str()); return 3; }
     if (st == VerifyRunner::DONE) { printf("VERIFY SCRIPT COMPLETED: %zu steps, %zu keys, %.1f s (%s mode)\n", r.StepCount(), r.KeysTyped(), el, native ? "native" : "Z80"); return 0; }
     printf("VERIFY SCRIPT FAILED after %.1f s: %s\n", el, st == VerifyRunner::FAILED ? r.Error().c_str() : "timeout");

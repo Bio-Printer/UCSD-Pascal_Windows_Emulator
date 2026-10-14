@@ -1425,6 +1425,9 @@ void CMainFrame::OnOptionsFontLarge()  { m_fontPointSize = 14; RecreateFont(); R
 class CImportUnitDlg : public CDialog {
 public:
     int m_selectedUnit = 4; // in: default unit; out: chosen unit
+    uint16_t     m_selectedBase = 0;  // out: the sub-volume's first block (0: the volume)
+    std::wstring m_selectedWhere;     // out: e.g. "BIGGY:" or "BIGGY:/A/B"
+    PSystemEngine* m_engine = nullptr;
 
     struct UnitStatus {
         int    unit;
@@ -1433,8 +1436,41 @@ public:
     };
     std::vector<UnitStatus> m_units;
 
-    CImportUnitDlg(std::vector<UnitStatus> units, CWnd* parent)
-        : CDialog(IDD_IMPORT_UNIT, parent), m_units(std::move(units)) {}
+    CImportUnitDlg(std::vector<UnitStatus> units, PSystemEngine* eng, CWnd* parent)
+        : CDialog(IDD_IMPORT_UNIT, parent), m_engine(eng), m_units(std::move(units)) {}
+
+    // The "Into" combo: the unit's volume and every sub-volume on it
+    void FillInto(int unit) {
+        CComboBox* cb = (CComboBox*)GetDlgItem(IDC_IMPORT_INTO);
+        cb->ResetContent();
+        m_into = m_engine->GetSubVolumes(unit);
+        std::wstring vol = m_engine->GetVolumeNameForUnit(unit) + L":";
+        for (int i = 0; i < (int)m_into.size(); i++) {
+            int idx = cb->AddString((vol + (m_into[i].path.empty() ? L"" : L"/" + m_into[i].path)).c_str());
+            cb->SetItemData(idx, (DWORD_PTR)i);
+        }
+        cb->SetCurSel(0);
+    }
+
+    int CheckedUnit() {
+        static const int kIDs[] = { IDC_IMPORT_RADIO4, IDC_IMPORT_RADIO5, IDC_IMPORT_RADIO9,
+                                    IDC_IMPORT_RADIO10, IDC_IMPORT_RADIO11, IDC_IMPORT_RADIO12,
+                                    IDC_IMPORT_RADIO13, IDC_IMPORT_RADIO14 };
+        for (int i = 0; i < (int)m_units.size() && i < 8; i++) {
+            CButton* btn = (CButton*)GetDlgItem(kIDs[i]);
+            if (btn && btn->GetCheck() == BST_CHECKED) return m_units[i].unit;
+        }
+        return m_selectedUnit;
+    }
+
+    BOOL OnCommand(WPARAM wParam, LPARAM lParam) override {
+        UINT id = LOWORD(wParam);
+        if (HIWORD(wParam) == BN_CLICKED && id >= IDC_IMPORT_RADIO4 && id <= IDC_IMPORT_RADIO14) {
+            FillInto(CheckedUnit());
+            return TRUE;
+        }
+        return CDialog::OnCommand(wParam, lParam);
+    }
 
     BOOL OnInitDialog() override {
         CDialog::OnInitDialog();
@@ -1459,6 +1495,7 @@ public:
             m_selectedUnit = m_units[firstLoaded].unit;
             ((CButton*)GetDlgItem(kIDs[firstLoaded]))->SetCheck(BST_CHECKED);
         }
+        FillInto(m_selectedUnit);
         return TRUE;
     }
 
@@ -1473,8 +1510,18 @@ public:
                 break;
             }
         }
+        CComboBox* cb = (CComboBox*)GetDlgItem(IDC_IMPORT_INTO);
+        int sel = cb->GetCurSel();
+        int k = sel >= 0 ? (int)cb->GetItemData(sel) : -1;
+        m_selectedBase = k >= 0 && k < (int)m_into.size() ? m_into[k].base : 0;
+        CString where;
+        if (sel >= 0) cb->GetLBText(sel, where);
+        m_selectedWhere = (LPCWSTR)where;
         CDialog::OnOK();
     }
+
+private:
+    std::vector<PSystemEngine::SubVolume> m_into;   // the combo's items, by item data
 };
 
 void CMainFrame::OnOptionsImportFile() {
@@ -1514,14 +1561,14 @@ void CMainFrame::OnOptionsImportFile() {
         statuses.push_back(s);
     }
 
-    CImportUnitDlg dlgUnit(statuses, this);
+    CImportUnitDlg dlgUnit(statuses, m_engine.get(), this);
     // Default to unit 4 if loaded, otherwise the first loaded unit
     dlgUnit.m_selectedUnit = 4;
     if (dlgUnit.DoModal() != IDOK) return;
     int targetUnit = dlgUnit.m_selectedUnit;
 
     // ---- Step 3: perform the import ----
-    std::wstring err = m_engine->ImportFileToVolume(targetUnit, srcPath);
+    std::wstring err = m_engine->ImportFileToVolume(targetUnit, srcPath, dlgUnit.m_selectedBase);
     if (!err.empty()) {
         AfxMessageBox((L"Import failed:\r\n\r\n" + err).c_str(), MB_OK | MB_ICONERROR);
         return;
@@ -1540,7 +1587,7 @@ void CMainFrame::OnOptionsImportFile() {
             if (ucsdName.size() == 15) break;
         }
     }
-    std::wstring volName = m_engine->GetVolumeNameForUnit(targetUnit);
+    std::wstring volName = dlgUnit.m_selectedWhere;
     CString msg;
     msg.Format(L"Successfully imported:\r\n\r\n"
                L"  Windows file: %s\r\n"
@@ -1563,6 +1610,8 @@ class CExportFileDlg : public CDialog {
 public:
     int          m_selectedUnit = 4;  // in/out: unit number chosen
     std::wstring m_selectedFile;      // out: the UCSD filename chosen
+    uint16_t     m_selectedBase = 0;  // out: the sub-volume it is in (its first block; 0: the volume)
+    std::wstring m_where;             // out: e.g. "BIGGY:" or "BIGGY:/A/B"
     PSystemEngine* m_engine = nullptr;
 
     CExportFileDlg(PSystemEngine* eng, CWnd* parent)
@@ -1590,25 +1639,39 @@ public:
         }
         cb->SetCurSel(0);
         m_selectedUnit = (int)cb->GetItemData(0);
+        m_open.clear();
         PopulateFileList();
         GetDlgItem(IDOK)->EnableWindow(FALSE);
         return TRUE;
     }
 
+    // The sub-volumes opened (double-click), outermost first: name, first block
+    struct Opened { std::wstring name; uint16_t base; };
+    std::vector<Opened> m_open;
+
+    uint16_t Base() const { return m_open.empty() ? 0 : m_open.back().base; }
+
     void PopulateFileList() {
         CListBox* lb = (CListBox*)GetDlgItem(IDC_EXPORT_FILE_LIST);
         lb->ResetContent();
         m_names.clear();
-        auto entries = m_engine->GetVolumeDirectory(m_selectedUnit);
+        m_where = m_engine->GetVolumeNameForUnit(m_selectedUnit) + L":";
+        for (auto& o : m_open) m_where += L"/" + o.name;
+        GetDlgItem(IDC_EXPORT_WHERE)->SetWindowTextW(
+            (L"Files on " + m_where + L"  (double-click a sub-volume to open it):").c_str());
+        if (!m_open.empty())
+            lb->SetItemData(lb->AddString(L"..                (back up)"), (DWORD_PTR)-1);
+        m_entries = m_engine->GetVolumeDirectory(m_selectedUnit, Base());
+        auto& entries = m_entries;
         static const char* kinds[] = { "     ","     ","CODE ","TEXT ","INFO ","DATA ","GRAF ","FOTO " };
         for (int origIdx = 0; origIdx < (int)entries.size(); origIdx++) {
             auto& e = entries[origIdx];
-            // Format: "FILENAME.EXT     TYPE   N blks   M bytes"
+            // Format: "FILENAME.EXT     TYPE   N blks   M bytes" ("A/   SUBV" for a sub-volume)
             CString line;
-            const char* kindStr = (e.kind >= 0 && e.kind <= 7) ? kinds[e.kind] : "     ";
+            const char* kindStr = e.subVolume ? "SUBV " : (e.kind >= 0 && e.kind <= 7) ? kinds[e.kind] : "     ";
             long bytes = e.ByteCount();
             line.Format(L"%-16s  %S  %4d blks  %7ld bytes",
-                        e.name.c_str(), kindStr,
+                        (e.subVolume ? e.name + L"/" : e.name).c_str(), kindStr,
                         (int)(e.lastBlock - e.firstBlock), bytes);
             int listPos = lb->AddString(line);
             // Store the ORIGINAL directory index in item data.
@@ -1627,6 +1690,21 @@ public:
         GetDlgItem(IDOK)->EnableWindow(FALSE);
     }
 
+    // List item listSel: into the sub-volume, or (..) out of the one open; false if it is a file
+    bool OpenItem(int listSel) {
+        CListBox* lb = (CListBox*)GetDlgItem(IDC_EXPORT_FILE_LIST);
+        int origIdx = (int)lb->GetItemData(listSel);
+        if (origIdx == -1) {
+            m_open.pop_back();
+        } else if (origIdx >= 0 && origIdx < (int)m_entries.size() && m_entries[origIdx].subVolume) {
+            if (m_open.size() >= 8) return true;
+            m_open.push_back({ m_entries[origIdx].name, (uint16_t)(Base() + m_entries[origIdx].firstBlock) });
+        } else
+            return false;
+        PopulateFileList();
+        return true;
+    }
+
     BOOL OnCommand(WPARAM wParam, LPARAM lParam) override {
         UINT id   = LOWORD(wParam);
         UINT code = HIWORD(wParam);
@@ -1634,28 +1712,38 @@ public:
             CComboBox* cb = (CComboBox*)GetDlgItem(IDC_EXPORT_UNIT_COMBO);
             int sel = cb->GetCurSel();
             if (sel >= 0) m_selectedUnit = (int)cb->GetItemData(sel);
+            m_open.clear();
             PopulateFileList();
+            return TRUE;
+        }
+        if (id == IDC_EXPORT_FILE_LIST && code == LBN_DBLCLK) {
+            CListBox* lb = (CListBox*)GetDlgItem(IDC_EXPORT_FILE_LIST);
+            int listSel = lb->GetCurSel();
+            if (listSel >= 0 && !OpenItem(listSel))
+                OnOK();                     // a file: export it
             return TRUE;
         }
         if (id == IDC_EXPORT_FILE_LIST && code == LBN_SELCHANGE) {
             CListBox* lb = (CListBox*)GetDlgItem(IDC_EXPORT_FILE_LIST);
             int listSel  = lb->GetCurSel();
-            bool haveSelection = (listSel >= 0);
+            bool haveSelection = (listSel >= 0 && (int)lb->GetItemData(listSel) != -1);
             GetDlgItem(IDOK)->EnableWindow(haveSelection ? TRUE : FALSE);
             if (haveSelection) {
                 // Use GetItemData to get the original directory index, not
                 // the (potentially sorted) list position.
                 int origIdx = (int)lb->GetItemData(listSel);
-                auto entries = m_engine->GetVolumeDirectory(m_selectedUnit);
+                auto& entries = m_entries;
                 if (origIdx >= 0 && origIdx < (int)entries.size()) {
                     auto& e = entries[origIdx];
                     CString info;
-                    info.Format(L"Blocks %u-%u  |  %ld bytes",
+                    info.Format(e.subVolume ? L"Blocks %u-%u  |  %ld bytes  |  a sub-volume: double-click opens it"
+                                            : L"Blocks %u-%u  |  %ld bytes",
                                 (unsigned)e.firstBlock, (unsigned)(e.lastBlock - 1),
                                 e.ByteCount());
                     GetDlgItem(IDC_EXPORT_INFO)->SetWindowTextW(info);
                 }
-            }
+            } else
+                GetDlgItem(IDC_EXPORT_INFO)->SetWindowTextW(L"");
             return TRUE;
         }
         return CDialog::OnCommand(wParam, lParam);
@@ -1669,14 +1757,20 @@ public:
             // position), so this correctly retrieves the right name even when
             // the list is sorted differently from the directory order.
             int origIdx = (int)lb->GetItemData(listSel);
+            if (origIdx == -1) {            // .. (RETURN on it): back up, not an export
+                OpenItem(listSel);
+                return;
+            }
             if (origIdx >= 0 && origIdx < (int)m_names.size())
                 m_selectedFile = m_names[origIdx];
         }
+        m_selectedBase = Base();
         CDialog::OnOK();
     }
 
 private:
     std::vector<std::wstring> m_names; // indexed by original directory order
+    std::vector<PSystemEngine::UcsdDirEntry> m_entries;  // the list's directory (of the sub-volume open)
 };
 
 void CMainFrame::OnOptionsExportFile() {
@@ -1697,14 +1791,14 @@ void CMainFrame::OnOptionsExportFile() {
     std::wstring destPath = (LPCWSTR)dlgSave.GetPathName();
 
     // ---- Step 3: export ----
-    std::wstring err = m_engine->ExportFileFromVolume(srcUnit, ucsdName, destPath);
+    std::wstring err = m_engine->ExportFileFromVolume(srcUnit, ucsdName, destPath, dlgExport.m_selectedBase);
     if (!err.empty()) {
         AfxMessageBox((L"Export failed:\r\n\r\n" + err).c_str(), MB_OK | MB_ICONERROR);
         return;
     }
 
     // ---- Step 4: report success ----
-    std::wstring volName = m_engine->GetVolumeNameForUnit(srcUnit);
+    std::wstring volName = dlgExport.m_where;
     CString msg;
     msg.Format(L"Successfully exported:\r\n\r\n"
                L"  UCSD file: %s  (on %s, unit #%d)\r\n"

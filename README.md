@@ -227,6 +227,20 @@ then; typed while it waits for a key, both are ordinary keys, as before.  The st
 "Output stopped (^S) -- ^Q goes on".  The verify runner has `QUIET "ms"`: the console output must not
 grow for that long.
 
+## Import and Export reach into sub-volumes (version 2.07)
+
+A sub-volume is a data file whose own blocks 2..5 hold a UCSD directory -- a volume inside a file,
+its block numbers counted from the file's first block (Tiny-C's shell makes one with `MKDIR NAME
+[BLOCKS]`; its files are `VOL:/A/B/NAME`).  Options > **Import File** has an "Into" list below the
+units: the chosen unit's volume and every sub-volume on it (`BIGGY:`, `BIGGY:/A`, `BIGGY:/A/B`),
+and the file goes into the one picked.  Options > **Export File** lists a sub-volume as `A/` (kind
+`SUBV`): a double-click opens it, `..` goes back up, and the line above the list says where you
+are (`Files on BIGGY:/A/B`); Export on a sub-volume itself copies the whole file, and a
+double-click on a file exports it.  The engine: `GetSubVolumes(unit)`, and `GetVolumeDirectory`,
+`ImportFileToVolume`, `ExportFileFromVolume` take the sub-volume's first block (0: the volume).
+The verify runner: `VERIFY_IMPORT=unit/A/B:path`, `VERIFY_EXPORT=unit[/A/B]:NAME:path` (when the
+script has ended) and `VERIFY_SUBVOLS=1` (lists every sub-volume).
+
 ## Volume files changed while the emulator runs
 
 The emulator reads each volume image into memory when it mounts it and
@@ -254,8 +268,10 @@ script (`WAIT "text"` / `TYPE "keys"`):
 
 Environment options: `VERIFY_RECLAIM=1` (reclaim the Z80 interpreter's
 memory), `VERIFY_UNIT10=path` .. `VERIFY_UNIT14=path` (mount units #10..#14 in place),
-`VERIFY_IMPORT=unit:path` (Options > Import File; with
+`VERIFY_IMPORT=unit[/A/B]:path` (Options > Import File, into sub-volume A/B; with
 `VERIFY_IMPORT_STEP=n` at script step n, while the system runs),
+`VERIFY_EXPORT=unit[/A/B]:NAME:path` (Options > Export File, after the script),
+`VERIFY_SUBVOLS=1` (list the sub-volumes of every unit),
 `VERIFY_TOUCH=n:path` (at step n, change the file's last-write time from
 outside, as a pull would -- tests the protection above),
 `VERIFY_NOCOPROC=1` (Z80 mode without the coprocessor; Z80 runs print a

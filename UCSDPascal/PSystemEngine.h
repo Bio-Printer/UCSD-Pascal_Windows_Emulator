@@ -389,11 +389,23 @@ public:
     // RunLoop()) instead of executing the real BIOS at 0xFE00.
     uint64_t DebugBiosLinkerNativeCount() const { return m_biosLinkerNativeCount; }
 
+    // Sub-volumes (Tiny-C's MKDIR, VOL:/A/B/NAME paths): a data file (kind 5,
+    // or untyped 0) whose own blocks 2..5 hold a valid UCSD directory, its
+    // block numbers counted from the file's first block.  "base" below is a
+    // sub-volume's first block on the disk; 0 is the volume itself.
+    struct SubVolume {
+        std::wstring path;      // "A/B" (the names on the way); "" the volume
+        uint16_t     base;
+    };
+    // The volume, then every sub-volume on it (nested ones after the one that
+    // holds them, at most 8 deep).  Empty if the unit is not mounted.
+    std::vector<SubVolume> GetSubVolumes(int unit) const;
+
     // Import a Windows file into a mounted UCSD Pascal disk volume image.
-    // unit: UCSD unit number (4, 5, 9, or 10).
+    // unit: UCSD unit number (4, 5, 9 .. 14); base: into that sub-volume.
     // windowsFilePath: full Win32 path to the source file.
     // Returns empty string on success; a human-readable error message otherwise.
-    std::wstring ImportFileToVolume(int unit, const std::wstring& windowsFilePath);
+    std::wstring ImportFileToVolume(int unit, const std::wstring& windowsFilePath, uint16_t base = 0);
 
     // Return the UCSD volume name from the disk image for the given unit number,
     // or an empty string if no image is loaded for that unit.
@@ -414,6 +426,7 @@ public:
         uint16_t     firstBlock;
         uint16_t     lastBlock;  // exclusive (first block past end of file)
         uint16_t     lastByte;   // bytes used in last block (1-512; 512 = last block full)
+        bool         subVolume = false;  // a data file that holds a directory (see SubVolume)
 
         // Total byte count of the file's content.
         long ByteCount() const {
@@ -422,15 +435,17 @@ public:
         }
     };
 
-    // Return the directory entries for the named unit's mounted disk image.
+    // Return the directory entries for the named unit's mounted disk image
+    // (base: of that sub-volume; block numbers are the sub-volume's own).
     // Returns an empty vector if the unit is not mounted or unreadable.
-    std::vector<UcsdDirEntry> GetVolumeDirectory(int unit) const;
+    std::vector<UcsdDirEntry> GetVolumeDirectory(int unit, uint16_t base = 0) const;
 
-    // Copy a single file from a mounted UCSD volume image out to a Windows path.
+    // Copy a single file from a mounted UCSD volume image (base: from that
+    // sub-volume) out to a Windows path.
     // ucsdName must match a directory entry name exactly (case-sensitive).
     // Returns empty string on success; a human-readable error message otherwise.
     std::wstring ExportFileFromVolume(int unit, const std::wstring& ucsdName,
-                                      const std::wstring& windowsDestPath) const;
+                                      const std::wstring& windowsDestPath, uint16_t base = 0) const;
 
 private:
     Z80 m_cpu;

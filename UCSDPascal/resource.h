@@ -63,10 +63,12 @@
 #define IDC_IMPORT_RADIO12      1015
 #define IDC_IMPORT_RADIO13      1016
 #define IDC_IMPORT_RADIO14      1017
+#define IDC_IMPORT_INTO         1018
 
 #define IDC_EXPORT_UNIT_COMBO   1020
 #define IDC_EXPORT_FILE_LIST    1021
 #define IDC_EXPORT_INFO         1022
+#define IDC_EXPORT_WHERE        1023
 
 #define IDC_TRACE_ENABLE        1030
 #define IDC_TRACE_PATH          1031

@@ -1424,24 +1424,39 @@ static const char* UcsdKindName(int kind) {
     }
 }
 
-std::vector<PSystemEngine::UcsdDirEntry> PSystemEngine::GetVolumeDirectory(int unit) const {
+// A valid directory at block base+2 of the image, of a volume of at most
+// maxBlocks blocks (a sub-volume: the file that holds it)
+static bool ValidDirectoryAt(const std::vector<uint8_t>& img, long base, long maxBlocks) {
+    long d = base * 512L + UCSD_DIR_BYTE_OFFSET;
+    if (d + 2048 > (long)img.size()) return false;
+    auto rd16 = [&](long off) -> uint16_t { return (uint16_t)(img[off] | (img[off + 1] << 8)); };
+    int nameLen = img[d + 6];
+    uint16_t eov = rd16(d + 14), n = rd16(d + 16);
+    return rd16(d) == 0 && rd16(d + 2) == 6 && nameLen >= 1 && nameLen <= 7
+        && n <= UCSD_MAX_ENTRIES && eov >= 6 && eov <= maxBlocks
+        && base * 512L + eov * 512L <= (long)img.size();
+}
+
+std::vector<PSystemEngine::UcsdDirEntry> PSystemEngine::GetVolumeDirectory(int unit, uint16_t base) const {
     std::vector<UcsdDirEntry> result;
     int drive = UnitToDriveIndex(unit);
     if (drive < 0) return result;
     const std::vector<uint8_t>* img = nullptr;
     if (drive >= 0 && drive < kDrives) img = &m_volDrive[drive];
-    if (!img || img->size() < (size_t)(UCSD_DIR_BYTE_OFFSET + UCSD_ENTRY_SIZE * 2))
+    const int dir = base * 512 + UCSD_DIR_BYTE_OFFSET;
+    if (!img || img->size() < (size_t)(dir + UCSD_ENTRY_SIZE * 2))
         return result;
+    if (base != 0 && !ValidDirectoryAt(*img, base, 65535)) return result;
 
     auto rd16 = [&](int off) -> uint16_t {
         return (uint16_t)((*img)[off] | ((*img)[off + 1] << 8));
     };
 
-    uint16_t numFiles = rd16(UCSD_DIR_BYTE_OFFSET + 16);
+    uint16_t numFiles = rd16(dir + 16);
     if (numFiles > UCSD_MAX_ENTRIES) numFiles = UCSD_MAX_ENTRIES;
 
     for (int i = 0; i < numFiles; i++) {
-        int off = UCSD_DIR_BYTE_OFFSET + UCSD_ENTRY_SIZE + i * UCSD_ENTRY_SIZE;
+        int off = dir + UCSD_ENTRY_SIZE + i * UCSD_ENTRY_SIZE;
         if (off + UCSD_ENTRY_SIZE > (int)img->size()) break;
 
         UcsdDirEntry e;
@@ -1454,16 +1469,39 @@ std::vector<PSystemEngine::UcsdDirEntry> PSystemEngine::GetVolumeDirectory(int u
             e.name += (wchar_t)(*img)[off + 7 + j];
         e.lastByte = rd16(off + 22);
         if (e.lastByte == 0 || e.lastByte > 512) e.lastByte = 512;
+        e.subVolume = (e.kind == 5 || e.kind == 0)
+            && ValidDirectoryAt(*img, (long)base + e.firstBlock, e.lastBlock - e.firstBlock);
         if (!e.name.empty() && e.lastBlock > e.firstBlock)
             result.push_back(e);
     }
     return result;
 }
 
+std::vector<PSystemEngine::SubVolume> PSystemEngine::GetSubVolumes(int unit) const {
+    std::vector<SubVolume> result;
+    if (GetVolumeNameForUnit(unit).empty()) return result;
+    std::vector<int> depth;
+    result.push_back({ L"", 0 });
+    depth.push_back(0);
+    for (size_t k = 0; k < result.size(); k++) {          // (each one's sub-volumes right after it)
+        if (depth[k] >= 8) continue;
+        size_t at = k + 1;
+        for (auto& e : GetVolumeDirectory(unit, result[k].base)) {
+            if (!e.subVolume) continue;
+            SubVolume s = { result[k].path.empty() ? e.name : result[k].path + L"/" + e.name,
+                            (uint16_t)(result[k].base + e.firstBlock) };
+            result.insert(result.begin() + at, s);
+            depth.insert(depth.begin() + at, depth[k] + 1);
+            at++;
+        }
+    }
+    return result;
+}
+
 std::wstring PSystemEngine::ExportFileFromVolume(int unit, const std::wstring& ucsdName,
-                                                  const std::wstring& windowsDestPath) const {
+                                                  const std::wstring& windowsDestPath, uint16_t base) const {
     // Find the entry
-    auto entries = GetVolumeDirectory(unit);
+    auto entries = GetVolumeDirectory(unit, base);
     const UcsdDirEntry* found = nullptr;
     for (auto& e : entries)
         if (e.name == ucsdName) { found = &e; break; }
@@ -1475,7 +1513,7 @@ std::wstring PSystemEngine::ExportFileFromVolume(int unit, const std::wstring& u
     if (drive >= 0 && drive < kDrives) img = &m_volDrive[drive];
     if (!img) return L"Internal error: drive image unavailable.";
 
-    long byteOffset = (long)found->firstBlock * 512L;
+    long byteOffset = ((long)base + found->firstBlock) * 512L;
     long byteCount  = found->ByteCount();
     if (byteCount < 0) byteCount = 0;
 
@@ -1542,7 +1580,7 @@ std::wstring PSystemEngine::ExportFileFromVolume(int unit, const std::wstring& u
     return L""; // success
 }
 
-std::wstring PSystemEngine::ImportFileToVolume(int unit, const std::wstring& windowsFilePath) {
+std::wstring PSystemEngine::ImportFileToVolume(int unit, const std::wstring& windowsFilePath, uint16_t base) {
     int drive = UnitToDriveIndex(unit);
     if (drive < 0) return L"Invalid unit number (use 4, 5, 9, 10, 11, 12, 13 or 14).";
 
@@ -1551,6 +1589,9 @@ std::wstring PSystemEngine::ImportFileToVolume(int unit, const std::wstring& win
         return L"No disk image is loaded for that unit. Use File menu to open one first.";
     if (img->size() < (size_t)(UCSD_DIR_BYTE_OFFSET + UCSD_ENTRY_SIZE))
         return L"Disk image is too small to contain a valid UCSD directory.";
+    if (base != 0 && !ValidDirectoryAt(*img, base, 65535))
+        return L"There is no sub-volume at that place on the disk.";
+    const int dir = base * 512 + UCSD_DIR_BYTE_OFFSET;    // the directory (of the sub-volume)
 
     // ---- Load the Windows source file ----
     FILE* wf = nullptr;
@@ -1576,11 +1617,11 @@ std::wstring PSystemEngine::ImportFileToVolume(int unit, const std::wstring& win
         (*img)[off + 1] = (uint8_t)(v >> 8);
     };
 
-    uint16_t eovblk   = rd16(UCSD_DIR_BYTE_OFFSET + 14);
-    uint16_t numFiles = rd16(UCSD_DIR_BYTE_OFFSET + 16);
-    uint16_t dirEndBlk= rd16(UCSD_DIR_BYTE_OFFSET + 2); // first data block (typically 6)
+    uint16_t eovblk   = rd16(dir + 14);
+    uint16_t numFiles = rd16(dir + 16);
+    uint16_t dirEndBlk= rd16(dir + 2); // first data block (typically 6)
 
-    if (eovblk == 0 || eovblk > (uint16_t)(img->size() / 512))
+    if (eovblk == 0 || (long)base + eovblk > (long)(img->size() / 512))
         return L"Directory appears corrupt (invalid end-of-volume block count).";
     if (numFiles >= UCSD_MAX_ENTRIES)
         return L"Directory is full -- the volume already has the maximum of 77 files.";
@@ -1588,7 +1629,7 @@ std::wstring PSystemEngine::ImportFileToVolume(int unit, const std::wstring& win
     // Find the first free block = highest DLASTBLK among all file entries.
     uint16_t firstFreeBlk = dirEndBlk;
     for (int i = 0; i < numFiles; i++) {
-        int off = UCSD_DIR_BYTE_OFFSET + UCSD_ENTRY_SIZE + i * UCSD_ENTRY_SIZE;
+        int off = dir + UCSD_ENTRY_SIZE + i * UCSD_ENTRY_SIZE;
         uint16_t dlast = rd16(off + 2);
         if (dlast > firstFreeBlk) firstFreeBlk = dlast;
     }
@@ -1626,7 +1667,7 @@ std::wstring PSystemEngine::ImportFileToVolume(int unit, const std::wstring& win
 
     // Check for duplicate filename
     for (int i = 0; i < numFiles; i++) {
-        int off = UCSD_DIR_BYTE_OFFSET + UCSD_ENTRY_SIZE + i * UCSD_ENTRY_SIZE;
+        int off = dir + UCSD_ENTRY_SIZE + i * UCSD_ENTRY_SIZE;
         int nlen = (*img)[off + 6];
         if (nlen < 0 || nlen > 15) continue;
         std::wstring existing;
@@ -1666,7 +1707,7 @@ std::wstring PSystemEngine::ImportFileToVolume(int unit, const std::wstring& win
     }
 
     // ---- Write file data into the volume image ----
-    long byteOffset = (long)firstFreeBlk * 512L;
+    long byteOffset = ((long)base + firstFreeBlk) * 512L;
     long neededBytes = (long)blocksNeeded * 512L;
     // Grow the in-memory image if the volume is larger than currently loaded
     if (byteOffset + neededBytes > (long)img->size())
@@ -1677,7 +1718,7 @@ std::wstring PSystemEngine::ImportFileToVolume(int unit, const std::wstring& win
         std::copy(fileData.begin(), fileData.end(), img->begin() + byteOffset);
 
     // ---- Add the directory entry at the end of the current entries ----
-    int entryOff = UCSD_DIR_BYTE_OFFSET + UCSD_ENTRY_SIZE + numFiles * UCSD_ENTRY_SIZE;
+    int entryOff = dir + UCSD_ENTRY_SIZE + numFiles * UCSD_ENTRY_SIZE;
     std::fill(img->begin() + entryOff, img->begin() + entryOff + UCSD_ENTRY_SIZE, 0u);
     wr16(entryOff + 0, firstFreeBlk);          // DFIRSTBLK
     wr16(entryOff + 2, newLastBlk);            // DLASTBLK
@@ -1693,10 +1734,10 @@ std::wstring PSystemEngine::ImportFileToVolume(int unit, const std::wstring& win
     wr16(entryOff + 24, 0); // date = 0 (no clock on this system)
 
     // ---- Update DNUMFILES in the volume header ----
-    wr16(UCSD_DIR_BYTE_OFFSET + 16, (uint16_t)(numFiles + 1));
+    wr16(dir + 16, (uint16_t)(numFiles + 1));
 
     // ---- Flush both the directory blocks and the new file data to disk ----
-    FlushDriveRegion(drive, UCSD_DIR_BYTE_OFFSET, 2048); // blocks 2-5
+    FlushDriveRegion(drive, dir, 2048); // blocks 2-5 (of the sub-volume)
     FlushDriveRegion(drive, byteOffset, (int)neededBytes);
 
     return L""; // empty string = success
