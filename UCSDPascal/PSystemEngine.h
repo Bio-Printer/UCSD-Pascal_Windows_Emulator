@@ -182,6 +182,10 @@ public:
     bool IsBreakKey(uint8_t ch);     // version 2.05: see PSystemEngine.cpp
     void NoteKeyRead();
     void SetBreakQuietMs(long long ms) { m_breakQuietMs = ms; }   // verify tests
+    // Version 2.08: OUT (2),n waits until a key is typed, at most n tenths of a second (the boot
+    // that chooses SYSTEM.C or SYSTEM.PASCAL). Verify runs do not wait (they stay deterministic).
+    void KeyWait(uint8_t tenths);
+    void SetBootKeyWait(bool on) { m_bootKeyWait = on; }
     void PublishKeyCount();     // 25609 / 25610: the keys waiting, in EXPANSION[2] (version 2.04); m_keyLock held
     // A program that wants Page Up, Page Down, Home, End, Insert and Delete
     // as one code each (Tiny-C's vi) sets SYSCOM^.EXPANSION[1] to 25605
@@ -509,6 +513,7 @@ private:
     std::atomic<bool> m_outStopped{ false };     // ^S: CONOUT waits until ^Q
     std::atomic<long long> m_lastKeyRead{ 0 };    // steady clock, ms: when the program last read a key
     long long m_breakQuietMs = 1500;              // the break key counts after this long without a read
+    bool m_bootKeyWait = true;                    // OUT (2) waits (SetBootKeyWait)
     bool m_captureConsole = false;
     std::string m_consoleCapture;
     volatile bool m_halted = false;
@@ -564,6 +569,7 @@ private:
     std::string m_bootFault;
     std::string m_nativeBootNote;
     bool NativeBoot(std::string& why, bool reclaimLayout);
+    bool NativeBootChoose(const uint8_t* img, uint8_t* systle, uint16_t name, uint8_t& cmplen);
     void NativeBootSysrd(uint16_t unitWord, uint16_t buf, uint16_t len, uint16_t block, uint16_t retAddr, uint16_t& sp);
     uint16_t m_abortAddr = 0;          // XFRTBL entry of opcode 0xD6 (ABORT), found at the first P-code instruction
     uint16_t m_cxp02 = 0x03D7;

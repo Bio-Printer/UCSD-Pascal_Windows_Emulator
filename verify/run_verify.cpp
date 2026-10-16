@@ -97,6 +97,7 @@ int main(int argc, char** argv) {
     const bool harvard = hv && *hv && strcmp(hv, "0") != 0;   // (unset, empty or 0: off)
     if (harvard) e.SetHarvard(true);
     e.SetConsoleCapture(true);
+    e.SetBootKeyWait(getenv("VERIFY_BOOTWAIT") != nullptr);   // the boot's 2 seconds for a key (2.08): only with it (not deterministic)
     if (getenv("VERIFY_NOSCROLL")) e.SetScrollCodes(false);   // as an emulator before 2.03 (vi then repaints every row)
     // VERIFY_LOWWATER=1: the least free memory (SP - NP) of the run, and the step it was reached in;
     // =2: also each step's own least (tracking restarts at each step: the

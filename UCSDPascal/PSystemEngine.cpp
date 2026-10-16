@@ -845,6 +845,61 @@ static const uint8_t kBiggyBootCode[0x2019 - 0x1EBA] = {   // as in the SYSTEM.M
     0x22, 0x42, 0x02, 0x22, 0x44, 0x02, 0x21, 0xBA, 0x1E, 0x22, 0x40, 0x02, 0xC3, 0xA4, 0x03,
 };
 
+// The boot that chooses the operating system (version 2.08; UCSD-SYSTEM-C tools/boot.py,
+// SYS-C:BOOTC.TEXT): the BOOT above with CALL IOINIT (1EE2) -> CALL CHOOSE and JP $45
+// (1F27, the name was not found) -> JP NOTFND, and CHOOSE, USE, PRINT, NOTFND at 2A40 in
+// the unused end of SYSTEM.MICRO, then its names and texts (read from the image). CHOOSE
+// asks, waits up to 2 seconds for a key (OUT (2): KeyWait), reads it, and puts SYSTEM.C,
+// or SYSTEM.PASCAL when a key came, into SYSTLE, its length + 1 into CMPLEN (the LD B,0EH
+// of the search); NOTFND tries the other name once. NativeBoot does the same.
+static const uint8_t kChoosingBoot[] = {   // 2A40.. (the code; the names and texts follow it)
+    0xCD, 0xBA, 0x1E, 0x21, 0xBC, 0x2A, 0xCD, 0x73, 0x2A, 0x3E, 0x14, 0xD3, 0x02, 0xDB, 0x00, 0xB7,
+    0x21, 0xB2, 0x2A, 0x28, 0x05, 0xDB, 0x01, 0x21, 0xA4, 0x2A, 0x7E, 0x3C, 0x32, 0x0C, 0x1F, 0x4F,
+    0x06, 0x00, 0xE5, 0x11, 0xCC, 0x1E, 0xED, 0xB0, 0xE1, 0x46, 0x23, 0x7E, 0xD3, 0x01, 0x10, 0xFA,
+    0x21, 0x55, 0x2B, 0x7E, 0xB7, 0xC8, 0xD3, 0x01, 0x23, 0x18, 0xF8, 0x21, 0xBB, 0x2A, 0x7E, 0xB7,
+    0x20, 0x1A, 0x34, 0x21, 0x08, 0x2B, 0xCD, 0x73, 0x2A, 0x3A, 0x0C, 0x1F, 0xFE, 0x0E, 0x21, 0xB2,
+    0x2A, 0x28, 0x03, 0x21, 0xA4, 0x2A, 0xCD, 0x5A, 0x2A, 0xC3, 0xFC, 0x1E, 0x21, 0x1E, 0x2B, 0xCD,
+    0x73, 0x2A, 0x18, 0xFE,
+};
+static const uint16_t kChooseAt = 0x2A40, kChNotFnd = 0x2A7B, kChNameP = 0x2AA4, kChNameC = 0x2AB2, kChTried = 0x2ABB,
+                      kChAsk = 0x2ABC, kChNotFound = 0x2B08, kChCrlf = 0x2B55, kChCmpLen = 0x1F0C;
+static const uint8_t kMicroName[13] = { 12, 'S','Y','S','T','E','M','.','M','I','C','R','O' };
+
+// 0: not a BOOT NativeBoot knows; 1: BIGGY's; 2: the choosing one (img: the loaded interpreter)
+static int BootKind(const uint8_t* img) {
+    if (memcmp(img + 0x1EBA, kBiggyBootCode, sizeof kBiggyBootCode) == 0) return 1;
+    uint8_t b[sizeof kBiggyBootCode];
+    memcpy(b, kBiggyBootCode, sizeof b);
+    b[0x1EE3 - 0x1EBA] = (uint8_t)kChooseAt; b[0x1EE4 - 0x1EBA] = (uint8_t)(kChooseAt >> 8);   // CALL CHOOSE
+    b[0x1F28 - 0x1EBA] = (uint8_t)kChNotFnd; b[0x1F29 - 0x1EBA] = (uint8_t)(kChNotFnd >> 8);   // JP NOTFND
+    if (memcmp(img + 0x1EBA, b, sizeof b) == 0 && memcmp(img + kChooseAt, kChoosingBoot, sizeof kChoosingBoot) == 0) return 2;
+    return 0;
+}
+
+// The disk's SYSTEM.MICRO where the loader puts it (at 0100, or from 0400 moved down) -- for
+// the Reclaim layout, which does not load it, to see which BOOT the disk has.
+static bool LoadMicroImage(const std::vector<uint8_t>& disk, uint8_t* img) {
+    for (size_t e = 2 * 512 + 0x1A; e + 0x1A <= 6 * 512 && e + 0x1A <= disk.size(); e += 0x1A) {
+        if (memcmp(&disk[e + 6], kMicroName, 13) != 0) continue;
+        const size_t first = disk[e] | (disk[e + 1] << 8), last = disk[e + 2] | (disk[e + 3] << 8);
+        const size_t len = last > first ? (last - first) * 512 : 0;
+        if (first * 512 + len > disk.size() || 0x0100 + len > 65536) return false;
+        memcpy(img + 0x0100, &disk[first * 512], len);
+        if (img[0x0100] != 0x2D) memmove(img + 0x0100, img + 0x0400, 0x5000);
+        return true;
+    }
+    return false;
+}
+
+// USE: SYSTLE := the name at img[name] (a string), cmplen := its length + 1, and it is said
+bool PSystemEngine::NativeBootChoose(const uint8_t* img, uint8_t* systle, uint16_t name, uint8_t& cmplen) {
+    cmplen = (uint8_t)(img[name] + 1);
+    memcpy(systle, img + name, cmplen);
+    for (int i = 1; i < cmplen; i++) PortOut(1, img[(uint16_t)(name + i)]);
+    for (uint16_t a = kChCrlf; img[a]; a++) PortOut(1, img[a]);
+    return true;
+}
+
 // SYSRD(unit, buf, 0, len, block) as the BOOT code calls it: the five
 // parameters and the return address are pushed exactly where the Z80 pushes
 // them (they stay in free memory below the stack), then the unit I/O runs as
@@ -943,10 +998,9 @@ bool PSystemEngine::NativeBoot(std::string& why, bool reclaimLayout) {
     };
     if (!readTo(2, 4 * 512, 0x0200)) { why = "cannot read the unit #4 directory"; return false; }
     uint16_t dent = (uint16_t)(0x0200 + 0x1A);       // the loader's directory buffer (Z80 layout)
-    static const uint8_t microName[13] = { 12, 'S','Y','S','T','E','M','.','M','I','C','R','O' };
     bool microFound = false;
     for (int c = 77; c > 0; c--, dent = (uint16_t)(dent + 0x1A))
-        if (memcmp(&ram[(uint16_t)(dent + 6)], microName, 13) == 0) { microFound = true; break; }
+        if (memcmp(&ram[(uint16_t)(dent + 6)], kMicroName, 13) == 0) { microFound = true; break; }
     if (!microFound) { why = "SYSTEM.MICRO not found on unit #4"; return false; }
     const uint16_t microFirst = rdR(dent), microLen = (uint16_t)((rdR((uint16_t)(dent + 2)) - microFirst) * 512);
     say("\r\nLoading SYSTEM.MICRO (P-Code Interpreter tables) -- native boot, P-Code mode\r\n");
@@ -961,12 +1015,24 @@ bool PSystemEngine::NativeBoot(std::string& why, bool reclaimLayout) {
         static const uint8_t pageZero[10] = { 0x50, 0xF2, 0x50, 0xF2, 0x77, 0xF1, 0x3E, 0xF2, 0x08, 0xF1 };
         if (hsh == 0xC9D12F8C84E87938ULL) memcpy(m_mem + 0x00F6, pageZero, sizeof pageZero);
     }
-    if (memcmp(ram + 0x1EBA, kBiggyBootCode, sizeof kBiggyBootCode) != 0) {
+    }                                                // ---- end of the loader's work ----
+
+    // Which BOOT: the loaded interpreter's; Reclaim: the disk's SYSTEM.MICRO (not loaded) --
+    // without one, or with another BOOT, the built-in tables' (BIGGY's)
+    std::vector<uint8_t> micro;
+    const uint8_t* img = ram;
+    if (reclaimLayout) {
+        micro.assign(65536, 0);
+        img = LoadMicroImage(*disk, micro.data()) && BootKind(micro.data()) == 2 ? micro.data() : nullptr;
+    }
+    const int bootKind = img ? BootKind(img) : 1;
+    if (bootKind == 0) {
         why = "this SYSTEM.MICRO's BOOT code is not the one native boot implements";
         return false;                                // memory is re-initialised by the Z80 boot below
     }
-
-    }                                                // ---- end of the loader's work ----
+    const bool choosing = bootKind == 2;
+    auto sayImg = [&](uint16_t a) { for (; img[a]; a++) PortOut(1, img[a]); };
+    uint8_t cmplen = 14;                             // the search's LD B,0EH: SYSTLE's length byte and characters
 
     // ---- Stage 2: the interpreter's BOOT (0x1EDF) ----
     uint16_t sp = 0x3819;                            // LD SP,RELSEG+1000H
@@ -974,17 +1040,34 @@ bool PSystemEngine::NativeBoot(std::string& why, bool reclaimLayout) {
     sp = (uint16_t)(sp + 2);
     const uint16_t memtop = reclaimLayout ? (uint16_t)0xFFF2 : (uint16_t)(rd16(0x0001) + 0xFFEF);
     wr16(PM_V(0x02F8), memtop);                            // IOINIT: MEMTOP
+    if (choosing) {                                  // CHOOSE (called instead of IOINIT, which it calls)
+        sayImg(kChAsk);
+        KeyWait(20);                                 // LD A,20; OUT (2),A
+        const bool key = PortIn(0) != 0;             // CONST
+        if (key) PortIn(1);                          // CONIN: the key is read
+        NativeBootChoose(img, &ram[0x1ECC], key ? kChNameP : kChNameC, cmplen);
+        if (!reclaimLayout) m_mem[kChCmpLen] = cmplen;
+    }
     const uint16_t sysunt = rd16(PM_V(0x02E8));
     NativeBootSysrd(sysunt, 0x2019, 0x0800, 2, 0x1EFC, sp);             // step 2: the directory
-    uint16_t dentp = 0x2033;                          // skip entry 0 (the volume name)
-    bool found = false;
-    for (int c = 256; c > 0; c--) {
-        wr16(0x1EDA, dentp);
-        if (memcmp(&m_mem[(uint16_t)(dentp + 6)], &ram[0x1ECC], 14) == 0) { found = true; break; }   // SYSTLE
-        dentp = (uint16_t)(dentp + 0x1A);
+    uint16_t dentp;
+    bool found = false, tried = false;
+    for (;;) {
+        dentp = 0x2033;                              // skip entry 0 (the volume name)
+        for (int c = 256; c > 0; c--) {
+            wr16(0x1EDA, dentp);
+            if (memcmp(&m_mem[(uint16_t)(dentp + 6)], &ram[0x1ECC], cmplen) == 0) { found = true; break; }   // SYSTLE
+            dentp = (uint16_t)(dentp + 0x1A);
+        }
+        if (found || !choosing || tried) break;
+        tried = true;                                // NOTFND: the other name, once
+        if (!reclaimLayout) m_mem[kChTried] = 1;
+        sayImg(kChNotFound);
+        NativeBootChoose(img, &ram[0x1ECC], cmplen == 14 ? kChNameC : kChNameP, cmplen);
+        if (!reclaimLayout) m_mem[kChCmpLen] = cmplen;
     }
     wr16(0x1EDA, dentp);
-    if (!found) { why = "SYSTEM.PASCAL not found on the boot unit"; return false; }
+    if (!found) { why = choosing ? "neither SYSTEM.C nor SYSTEM.PASCAL is on the boot unit" : "SYSTEM.PASCAL not found on the boot unit"; return false; }
     const uint16_t sysblk = rd16(dentp);
     wr16(0x1EDC, sysblk);                            // SYSBLK
     NativeBootSysrd(sysunt, 0x2819, 0x0040, sysblk, 0x1F49, sp);       // step 3: segment dictionary
@@ -1831,6 +1914,7 @@ void PSystemEngine::PortOut(uint8_t port, uint8_t v) {
                 fprintf(m_traceFile, "[CONSOLE @instr %ld] '%c' (0x%02X)\n",
                         m_traceCounter, (v >= 32 && v < 127) ? v : '.', v);
             break;
+        case 2: KeyWait(v); break;   // version 2.08: wait for a key, at most v tenths of a second
         case 199: break; // program-requested abort: ignored in the GUI build
         case 10: m_fdc.drive = v; break;
         case 11: m_fdc.track = v; break;
@@ -1846,6 +1930,22 @@ void PSystemEngine::PortOut(uint8_t port, uint8_t v) {
         case 207: m_bd.cmd = v; break;
         default: break;
     }
+}
+
+// Version 2.08: OUT (2),n -- wait until a key is typed, at most n tenths of a second; at once
+// when one is waiting. The key stays queued for CONST / CONIN. The boot that chooses the
+// operating system uses it (SYSTEM.C, or SYSTEM.PASCAL when a key is typed: UCSD-SYSTEM-C).
+// It is not a wait for input as CONIN's (m_waitingForKey stays false: the break and flow
+// keys and Verify's typing do not see it), and a Verify run does not wait at all
+// (SetBootKeyWait(false): its runs read no clock).
+void PSystemEngine::KeyWait(uint8_t tenths) {
+    if (!m_bootKeyWait || tenths == 0) return;
+    EnterCriticalSection(&m_keyLock);
+    const bool has = !m_keyQueue.empty();
+    LeaveCriticalSection(&m_keyLock);
+    if (has) return;
+    HANDLE handles[2] = { m_stopEvent, m_keyAvailable };
+    WaitForMultipleObjects(2, handles, FALSE, (DWORD)tenths * 100);
 }
 
 uint16_t PSystemEngine::PopStackWord() {

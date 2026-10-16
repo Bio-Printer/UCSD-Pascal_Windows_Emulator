@@ -1951,6 +1951,7 @@ void CMainFrame::StartVerify(bool record, bool reclaimedRecord) {
     }
     m_engine->SetTraceAlsoZ80(false);
     m_engine->SetConsoleCapture(true);
+    m_engine->SetBootKeyWait(false);    // a Verify run reads no clock: the boot does not wait for a key (2.08)
     m_verifyRunner = std::make_unique<VerifyRunner>(*m_engine, steps);
     m_verifyRecord = record;
     m_verifyReclaimed = reclaimed;

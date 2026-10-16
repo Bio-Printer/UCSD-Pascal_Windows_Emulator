@@ -241,6 +241,23 @@ double-click on a file exports it.  The engine: `GetSubVolumes(unit)`, and `GetV
 The verify runner: `VERIFY_IMPORT=unit/A/B:path`, `VERIFY_EXPORT=unit[/A/B]:NAME:path` (when the
 script has ended) and `VERIFY_SUBVOLS=1` (lists every sub-volume).
 
+## The boot chooses the operating system (version 2.08)
+
+BIGGY holds two operating systems: SYSTEM.PASCAL (the Pascal one) and SYSTEM.C (the same
+system written in C, [UCSD-SYSTEM-C](https://github.com/Bio-Printer/UCSD-SYSTEM-C)).  Its
+SYSTEM.MICRO has a boot that asks "Type any key within 2 seconds to boot SYSTEM.PASCAL
+instead of SYSTEM.C:" and boots SYSTEM.C unless a key is typed (the key is not passed on); when
+the one chosen is not on the disk, it boots the other.  The boot is the interpreter's BOOT with
+two instructions changed and a routine in the unused end of the file (UCSD-SYSTEM-C
+`tools/boot.py`, SYS-C:BOOTC.TEXT).  For it the emulator has a key wait: `OUT (2),n` returns
+when a key is typed, or after n tenths of a second (port 2; the key stays queued for CONST and
+CONIN).  The native boot of P-Code mode does the same as that code when it finds it (the
+Reclaim and Harvard layouts, which do not load SYSTEM.MICRO, look at the disk's), so memory
+and registers at the first P-code instruction are those of the Z80 boot.  Any other
+SYSTEM.MICRO boots SYSTEM.PASCAL as before.  A Verify run does not wait (it reads no clock):
+the verify runner waits with `VERIFY_BOOTWAIT=1`, and a script's first `TYPENOW " "` then
+chooses SYSTEM.PASCAL.
+
 ## Volume files changed while the emulator runs
 
 The emulator reads each volume image into memory when it mounts it and
@@ -279,6 +296,7 @@ outside, as a pull would -- tests the protection above),
 `VERIFY_HARVARD=1` (with `VERIFY_RECLAIM=1`: Harvard mode; prints a
 "harvard layout:" line), `VERIFY_PAUSE=n:ms` (at step n, Pause for ms
 milliseconds, report how many P-code instructions ran meanwhile, Resume),
+`VERIFY_BOOTWAIT=1` (the boot's key wait, `OUT (2)`, waits as in the GUI: 2.08),
 `VERIFY_HOSTCLOCK=1` (the PC's date and time, as the GUI's "PC date and
 time" option; off by default so runs are repeatable -- with it the
 compiler prints its time and lines/min),
