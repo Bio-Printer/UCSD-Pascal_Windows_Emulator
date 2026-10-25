@@ -258,6 +258,21 @@ SYSTEM.MICRO boots SYSTEM.PASCAL as before.  A Verify run does not wait (it read
 the verify runner waits with `VERIFY_BOOTWAIT=1`, and a script's first `TYPENOW " "` then
 chooses SYSTEM.PASCAL.
 
+## A disk image's size from the P-System: CSP 139, UNITSIZE (version 2.09)
+
+`UNITSIZE(unit, blocks)` (CSP 139: `I unit, I blocks -> I size`) makes the disk image of unit
+4, 5 or 9..15 that many blocks (1..32767): longer, with zeros at its end, or shorter, the
+blocks past the new end gone -- in memory and in the file on the PC (`std::filesystem::
+resize_file`, the file's stamp taken again, so it is not later taken for a file changed behind
+the emulator's back).  `blocks` 0 changes nothing.  It returns the image's blocks, or -1 with no
+image on that unit, a bad size, or a file that cannot be changed (replaced since it was loaded,
+read-only, no room on the PC's disk).  The volume's own size, its directory's DEOVBLK, is the
+program's to write: Tiny-C's GROW and SHRINK of a volume (`GROW #5: +1000`, `SHRINK #5:`;
+[UCSD-TinyC](https://github.com/Bio-Printer/UCSD-TinyC) `tinyc/lib/subvol.c`) grow the image
+before the directory says so, and cut it after.  A block write past an image's end is refused
+as before (IORESULT 1).  In Z80 mode the coprocessor runs it, as CSP 100..138
+(`NativeUnitSize.inc`).
+
 ## Volume files changed while the emulator runs
 
 The emulator reads each volume image into memory when it mounts it and

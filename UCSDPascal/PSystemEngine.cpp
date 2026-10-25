@@ -703,6 +703,24 @@ bool PSystemEngine::FlushDriveRegion(int drive, long fileOffset, int length) {
     return ok;
 }
 
+int PSystemEngine::UnitImageSize(uint8_t unit, int blocks) {
+    const int drive = UnitValueToDrive(unit);
+    auto* img = DriveImage(drive);
+    if (!img || img->empty()) return -1;
+    if (blocks == 0) return (int)(img->size() / 512);
+    if (blocks < 0 || blocks > 32767) return -1;
+    auto* path = DrivePath(drive);
+    if (path && !path->empty()) {
+        if (!DriveFileUnchanged(drive)) return -1;      // file replaced since loaded
+        std::error_code ec;
+        std::filesystem::resize_file(std::filesystem::path(*path), (uintmax_t)blocks * 512, ec);
+        if (ec) return -1;
+    }
+    img->resize((size_t)blocks * 512, 0);
+    StampDrive(drive);                                  // our own change: the new baseline
+    return blocks;
+}
+
 // ---------------------------------------------------------------------------
 // UCSD Pascal volume directory helpers
 // ---------------------------------------------------------------------------
@@ -2753,7 +2771,7 @@ void PSystemEngine::RunLoop() {
         int nativeOpcodeLookup = m_nativePcodeOps ? NativeOpcodeForTarget(m_cpu.r.PC) : -1;
         // Z80 mode's coprocessor (SetZ80Coprocessor): the Z80 interpreter's CSP
         // routine (0x15B8: LD A,(BC); INC BC) indexes its 41-entry CSPTBL with no
-        // range check, so CSP 100..138 -- the 8-byte doubles and CALLI -- would jump
+        // range check, so CSP 100..139 -- the 8-byte doubles, CALLI and UNITSIZE -- would jump
         // through whatever follows the table; and this build leaves SIN, COS, LOG,
         // ATAN, LN, EXP, SQT (CSP 25..31) unimplemented (NOFPT: JP NOTIMP).
         // Exactly those go to the native CSP code below (25..31 only while the
@@ -2767,7 +2785,7 @@ void PSystemEngine::RunLoop() {
             const uint16_t cpTo = (uint16_t)(m_mem[cpEntry] | (m_mem[(uint16_t)(cpEntry + 1)] << 8));
             const bool cpNotImp = cpTo == 0 ||                          // empty, or NOFPT's "JP NOTIMP"
                 (m_mem[cpTo] == 0xC3 && m_mem[(uint16_t)(cpTo + 1)] == 0x12 && m_mem[(uint16_t)(cpTo + 2)] == 0x04);
-            if ((cpNum >= 100 && cpNum <= 138) || (cpNum >= 25 && cpNum <= 31 && cpNotImp)) {
+            if ((cpNum >= 100 && cpNum <= 139) || (cpNum >= 25 && cpNum <= 31 && cpNotImp)) {
                 nativeOpcodeLookup = OP_CSP;                              // the coprocessor
                 m_z80CoprocCount++;
             }
@@ -3513,6 +3531,8 @@ void PSystemEngine::RunLoop() {
                 // CSPTBL leaves at zero) is a reasonable fallback.
                 // CSP 138: call through a function pointer (NativeCalli.inc)
 #include "NativeCalli.inc"
+                // CSP 139: a disk image's size (NativeUnitSize.inc)
+#include "NativeUnitSize.inc"
                 // 8-byte floating point (double): CSP 100..137 (NativeDouble.inc)
 #include "NativeDouble.inc"
                 if (procNum >= 25 && procNum <= 31) {

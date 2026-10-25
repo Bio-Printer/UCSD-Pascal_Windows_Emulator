@@ -674,6 +674,12 @@ private:
     // opened for writing; the in-memory image is authoritative for the
     // rest of this session either way.
     bool FlushDriveRegion(int drive, long fileOffset, int length);
+    // Version 2.09, CSP 139 (UNITSIZE, NativeUnitSize.inc): the disk image of unit
+    // makes `blocks` blocks (1..32767), bigger (zeros at the end) or smaller (the
+    // blocks past it gone), the file on the PC with it; blocks 0 only asks. The
+    // image's blocks after it; -1 with no image there, or when the file cannot be
+    // changed (replaced since it was loaded, read-only, no room on the PC's disk).
+    int UnitImageSize(uint8_t unit, int blocks);
     // Shared BLDMSCW ("Build Mark Stack Context Word") helper for CLP and
     // CBP. Reads proc_num from the code stream, looks up the procedure's
     // jtab via the segment table, extends the stack and copies parameters,
