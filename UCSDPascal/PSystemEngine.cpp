@@ -1631,13 +1631,15 @@ std::wstring PSystemEngine::ExportFileFromVolume(int unit, const std::wstring& u
     // alone can't distinguish them. Every other file is copied through
     // unmodified: those bytes are meaningful binary content, not UCSD's
     // text-run encoding, and decoding them the same way would corrupt
-    // the file.
+    // the file.  A file the directory says is text (kind 3: NAME.C,
+    // NAME.H, NAME.BAS as Import makes them) is decoded too (2.10): it has
+    // the 1K header and the pages, whatever its name.
     auto endsWithCI = [](const std::wstring& s, const wchar_t* suffix) {
         size_t slen = wcslen(suffix);
         if (s.size() < slen) return false;
         return _wcsicmp(s.c_str() + (s.size() - slen), suffix) == 0;
     };
-    bool isTextLike = endsWithCI(found->name, L".TEXT") || endsWithCI(found->name, L".LIST");
+    bool isTextLike = endsWithCI(found->name, L".TEXT") || endsWithCI(found->name, L".LIST") || (found->kind & 15) == 3;
 
     std::vector<uint8_t> out;
     if (isTextLike) {
@@ -1783,7 +1785,8 @@ std::wstring PSystemEngine::ImportFileToVolume(int unit, const std::wstring& win
     size_t dotPos = ucsdName.rfind(L'.');
     if (dotPos != std::wstring::npos) {
         std::wstring ext = ucsdName.substr(dotPos + 1);
-        if      (ext == L"TEXT" || ext == L"TXT"  || ext == L"BACK" ||  ext == L"C" || ext == L"H"  ) fileKind = 3;
+        // (BAS: a BASIC source of UCSD-BASIC's BC, a text file as NAME.TEXT is)
+        if      (ext == L"TEXT" || ext == L"TXT"  || ext == L"BACK" ||  ext == L"C" || ext == L"H" || ext == L"BAS") fileKind = 3;
         else if (ext == L"CODE"                                      ) fileKind = 2;
         else if (ext == L"INFO"                                      ) fileKind = 4;
         else if (ext == L"GRAF"                                      ) fileKind = 6;

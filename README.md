@@ -273,6 +273,18 @@ before the directory says so, and cut it after.  A block write past an image's e
 as before (IORESULT 1).  In Z80 mode the coprocessor runs it, as CSP 100..138
 (`NativeUnitSize.inc`).
 
+## Import and Export of BASIC sources (version 2.10)
+
+Options > Import File makes a PC file named NAME.BAS (a BASIC source of
+[UCSD-BASIC](https://github.com/Bio-Printer/UCSD-BASIC)'s BC) a UCSD text
+file, as it does NAME.TEXT, NAME.TXT, NAME.C and NAME.H: the 1K editor
+header, CR line ends, DLE-coded indentation, 1K pages.  Before, it was
+copied as a data file, and the P-System -- which reads NAME.BAS as text,
+the first 1K being the header -- lost its first 1K.  Export File turns
+every file the directory says is text (kind 3) back into a PC text file
+(CR LF, no header), whatever its name: NAME.BAS, NAME.C, NAME.H too, not
+only NAME.TEXT and NAME.LIST.
+
 ## Volume files changed while the emulator runs
 
 The emulator reads each volume image into memory when it mounts it and
