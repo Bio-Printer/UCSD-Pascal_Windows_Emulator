@@ -1726,59 +1726,12 @@ std::wstring PSystemEngine::ImportFileToVolume(int unit, const std::wstring& win
 
     if (eovblk == 0 || (long)base + eovblk > (long)(img->size() / 512))
         return L"Directory appears corrupt (invalid end-of-volume block count).";
-    if (numFiles >= UCSD_MAX_ENTRIES)
-        return L"Directory is full -- the volume already has the maximum of 77 files.";
+    if (numFiles > UCSD_MAX_ENTRIES)
+        return L"Directory appears corrupt (more than 77 files).";
 
-    // Find the first free block = highest DLASTBLK among all file entries.
-    uint16_t firstFreeBlk = dirEndBlk;
-    for (int i = 0; i < numFiles; i++) {
-        int off = dir + UCSD_ENTRY_SIZE + i * UCSD_ENTRY_SIZE;
-        uint16_t dlast = rd16(off + 2);
-        if (dlast > firstFreeBlk) firstFreeBlk = dlast;
-    }
-
-    // How many 512-byte blocks does the file occupy?
-    uint16_t blocksNeeded = (uint16_t)((rawSize + 511) / 512);
-    if (blocksNeeded == 0) blocksNeeded = 1; // even empty files get one block
-    uint16_t newLastBlk = (uint16_t)(firstFreeBlk + blocksNeeded);
-
-    if (newLastBlk > eovblk)
-        return L"Not enough free space on that volume.\r\n"
-               L"Need " + std::to_wstring(blocksNeeded) +
-               L" blocks; only " + std::to_wstring(eovblk - firstFreeBlk) + L" are free.";
-
-    // ---- Build the UCSD filename from the Windows path ----
-    // Strip drive/directory; keep base name only, uppercase, max 15 chars.
-    // UCSD filenames: [A-Z][A-Z0-9._]* up to 15 characters total.
-    std::wstring baseName;
-    size_t slashPos = windowsFilePath.find_last_of(L"\\/");
-    baseName = (slashPos == std::wstring::npos) ? windowsFilePath
-                                                  : windowsFilePath.substr(slashPos + 1);
-    // Convert to uppercase
-    for (wchar_t& c : baseName)
-        c = (wchar_t)towupper(c);
-    // Keep only valid UCSD filename characters
-    std::wstring ucsdName;
-    for (wchar_t c : baseName) {
-        if ((c >= L'A' && c <= L'Z') || (c >= L'0' && c <= L'9') ||
-                c == L'.' || c == L'_') {
-            ucsdName += c;
-            if (ucsdName.size() == 15) break;
-        }
-    }
-    if (ucsdName.empty()) return L"Could not derive a valid UCSD filename from:\r\n" + baseName;
-
-    // Check for duplicate filename
-    for (int i = 0; i < numFiles; i++) {
-        int off = dir + UCSD_ENTRY_SIZE + i * UCSD_ENTRY_SIZE;
-        int nlen = (*img)[off + 6];
-        if (nlen < 0 || nlen > 15) continue;
-        std::wstring existing;
-        for (int j = 0; j < nlen; j++)
-            existing += (wchar_t)(*img)[off + 7 + j];
-        if (existing == ucsdName)
-            return L"A file named \"" + ucsdName + L"\" already exists on that volume.";
-    }
+    // ---- The UCSD filename (UcsdNameFor) and kind ----
+    std::wstring ucsdName = UcsdNameFor(windowsFilePath);
+    if (ucsdName.empty()) return L"Could not derive a valid UCSD filename from:\r\n" + windowsFilePath;
 
     // Determine file kind from the extension (the part after the last dot).
     uint16_t fileKind = 5; // default: DATA
@@ -1802,16 +1755,68 @@ std::wstring PSystemEngine::ImportFileToVolume(int unit, const std::wstring& win
     if (fileKind == 3) {
         fileData = ConvertToUcsdText(fileData);
         rawSize = (long)fileData.size();
-        blocksNeeded = (uint16_t)((rawSize + 511) / 512);
-        newLastBlk = (uint16_t)(firstFreeBlk + blocksNeeded);
-        if (newLastBlk > eovblk)
-            return L"Not enough free space on that volume.\r\n"
-                   L"Need " + std::to_wstring(blocksNeeded) +
-                   L" blocks; only " + std::to_wstring(eovblk - firstFreeBlk) + L" are free.";
     }
+    // How many 512-byte blocks does the file occupy?
+    uint16_t blocksNeeded = (uint16_t)((rawSize + 511) / 512);
+    if (blocksNeeded == 0) blocksNeeded = 1; // even empty files get one block
+
+    // ---- The entries, in block order (the directory's own order) ----
+    struct Ent { uint8_t b[UCSD_ENTRY_SIZE]; };
+    std::vector<Ent> ents;
+    for (int i = 0; i < numFiles; i++) {
+        Ent en;
+        std::copy(img->begin() + dir + UCSD_ENTRY_SIZE * (i + 1),
+                  img->begin() + dir + UCSD_ENTRY_SIZE * (i + 2), en.b);
+        ents.push_back(en);
+    }
+    auto first = [](const Ent& en) { return (uint16_t)(en.b[0] | (en.b[1] << 8)); };
+    auto last  = [](const Ent& en) { return (uint16_t)(en.b[2] | (en.b[3] << 8)); };
+
+    // A file of that name is replaced, with no question (2.11): its entry
+    // goes, and its blocks are free for the new one.  Not a sub-volume: the
+    // files in it would go with it.
+    for (size_t i = 0; i < ents.size(); i++) {
+        int nlen = ents[i].b[6];
+        if (nlen < 1 || nlen > 15) continue;
+        std::wstring existing;
+        for (int j = 0; j < nlen; j++)
+            existing += (wchar_t)ents[i].b[7 + j];
+        if (existing != ucsdName) continue;
+        int k = ents[i].b[4] & 15;
+        if ((k == 5 || k == 0) && ValidDirectoryAt(*img, (long)base + first(ents[i]), last(ents[i]) - first(ents[i])))
+            return L"\"" + ucsdName + L"\" is a sub-volume there: it is not replaced.";
+        ents.erase(ents.begin() + i);
+        break;
+    }
+    if (ents.size() >= UCSD_MAX_ENTRIES)
+        return L"Directory is full -- the volume already has the maximum of 77 files.";
+
+    // The first free area that holds it (as the Filer would choose): between
+    // the directory and the first file, between two files, or after the last
+    uint16_t start = 0, biggest = 0;
+    size_t at = ents.size();
+    bool found = false;
+    uint16_t prev = dirEndBlk;
+    for (size_t k = 0; k <= ents.size(); k++) {
+        uint16_t gapEnd = k < ents.size() ? first(ents[k]) : eovblk;
+        if (gapEnd > prev) {
+            if (gapEnd - prev > biggest) biggest = (uint16_t)(gapEnd - prev);
+            if (!found && gapEnd - prev >= blocksNeeded) {
+                start = prev;
+                at = k;
+                found = true;
+            }
+        }
+        if (k < ents.size() && last(ents[k]) > prev) prev = last(ents[k]);
+    }
+    if (!found)
+        return L"Not enough free space on that volume.\r\n"
+               L"Need " + std::to_wstring(blocksNeeded) +
+               L" blocks; the largest free area is " + std::to_wstring(biggest) + L".";
+    uint16_t newLastBlk = (uint16_t)(start + blocksNeeded);
 
     // ---- Write file data into the volume image ----
-    long byteOffset = ((long)base + firstFreeBlk) * 512L;
+    long byteOffset = ((long)base + start) * 512L;
     long neededBytes = (long)blocksNeeded * 512L;
     // Grow the in-memory image if the volume is larger than currently loaded
     if (byteOffset + neededBytes > (long)img->size())
@@ -1821,30 +1826,54 @@ std::wstring PSystemEngine::ImportFileToVolume(int unit, const std::wstring& win
     if (!fileData.empty())
         std::copy(fileData.begin(), fileData.end(), img->begin() + byteOffset);
 
-    // ---- Add the directory entry at the end of the current entries ----
-    int entryOff = dir + UCSD_ENTRY_SIZE + numFiles * UCSD_ENTRY_SIZE;
-    std::fill(img->begin() + entryOff, img->begin() + entryOff + UCSD_ENTRY_SIZE, 0u);
-    wr16(entryOff + 0, firstFreeBlk);          // DFIRSTBLK
-    wr16(entryOff + 2, newLastBlk);            // DLASTBLK
-    wr16(entryOff + 4, fileKind);              // DFIBKIND
-    (*img)[entryOff + 6] = (uint8_t)ucsdName.size(); // filename length byte
+    // ---- Its directory entry, in its place in block order ----
+    Ent ne;
+    std::fill(ne.b, ne.b + UCSD_ENTRY_SIZE, (uint8_t)0);
+    ne.b[0] = (uint8_t)(start & 0xFF);       ne.b[1] = (uint8_t)(start >> 8);       // DFIRSTBLK
+    ne.b[2] = (uint8_t)(newLastBlk & 0xFF);  ne.b[3] = (uint8_t)(newLastBlk >> 8);  // DLASTBLK
+    ne.b[4] = (uint8_t)fileKind;                                                  // DFKIND
+    ne.b[6] = (uint8_t)ucsdName.size();                                           // the name's length
     for (int i = 0; i < (int)ucsdName.size(); i++)
-        (*img)[entryOff + 7 + i] = (uint8_t)ucsdName[i];
+        ne.b[7 + i] = (uint8_t)ucsdName[i];
     // DLASTBYTE: bytes used in the last block (512 = full)
     uint16_t lastByte = (rawSize == 0) ? (uint16_t)0
                        : (rawSize % 512 == 0) ? (uint16_t)512
                        : (uint16_t)(rawSize % 512);
-    wr16(entryOff + 22, lastByte);
-    wr16(entryOff + 24, 0); // date = 0 (no clock on this system)
+    ne.b[22] = (uint8_t)(lastByte & 0xFF);   ne.b[23] = (uint8_t)(lastByte >> 8);
+    // (date = 0: no clock on this system)
+    ents.insert(ents.begin() + at, ne);
 
-    // ---- Update DNUMFILES in the volume header ----
-    wr16(dir + 16, (uint16_t)(numFiles + 1));
+    // ---- The directory written back: the entries, DNUMFILES ----
+    for (size_t i = 0; i < ents.size(); i++)
+        std::copy(ents[i].b, ents[i].b + UCSD_ENTRY_SIZE, img->begin() + dir + UCSD_ENTRY_SIZE * (int)(i + 1));
+    // (the entry left over when one replaced was before the end: zeros)
+    for (size_t i = ents.size(); i < numFiles; i++)
+        std::fill(img->begin() + dir + UCSD_ENTRY_SIZE * (int)(i + 1),
+                  img->begin() + dir + UCSD_ENTRY_SIZE * (int)(i + 2), (uint8_t)0);
+    wr16(dir + 16, (uint16_t)ents.size());
 
     // ---- Flush both the directory blocks and the new file data to disk ----
     FlushDriveRegion(drive, dir, 2048); // blocks 2-5 (of the sub-volume)
     FlushDriveRegion(drive, byteOffset, (int)neededBytes);
 
     return L""; // empty string = success
+}
+
+// The UCSD name Import gives a Windows file: its name without the folder,
+// upper case, only A-Z 0-9 . _ kept, at most 15 characters
+std::wstring PSystemEngine::UcsdNameFor(const std::wstring& windowsFilePath) {
+    size_t slashPos = windowsFilePath.find_last_of(L"\\/");
+    std::wstring baseName = (slashPos == std::wstring::npos) ? windowsFilePath
+                                                             : windowsFilePath.substr(slashPos + 1);
+    std::wstring ucsdName;
+    for (wchar_t c : baseName) {
+        c = (wchar_t)towupper(c);
+        if ((c >= L'A' && c <= L'Z') || (c >= L'0' && c <= L'9') || c == L'.' || c == L'_') {
+            ucsdName += c;
+            if (ucsdName.size() == 15) break;
+        }
+    }
+    return ucsdName;
 }
 
 std::vector<uint8_t>* PSystemEngine::FdcImage() {

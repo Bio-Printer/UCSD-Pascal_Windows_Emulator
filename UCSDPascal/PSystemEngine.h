@@ -409,7 +409,11 @@ public:
     // unit: UCSD unit number (4, 5, 9 .. 14); base: into that sub-volume.
     // windowsFilePath: full Win32 path to the source file.
     // Returns empty string on success; a human-readable error message otherwise.
+    // A file of the same name there is replaced, without a question (not a
+    // sub-volume); the new one goes into the first free area that holds it.
     std::wstring ImportFileToVolume(int unit, const std::wstring& windowsFilePath, uint16_t base = 0);
+    // The UCSD name ImportFileToVolume gives that Windows file ("" if none)
+    static std::wstring UcsdNameFor(const std::wstring& windowsFilePath);
 
     // Return the UCSD volume name from the disk image for the given unit number,
     // or an empty string if no image is loaded for that unit.

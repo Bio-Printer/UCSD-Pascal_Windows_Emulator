@@ -45,16 +45,24 @@ int main(int argc, char** argv) {
             if (sv.path == path) { base = sv.base; return true; }
         return false;
     };
-    // VERIFY_IMPORT="unit[/A/B]:path": Options > Import File, before booting -- or,
+    // VERIFY_IMPORT="unit[/A/B]:path[;...]": Options > Import File, before booting -- or,
     // with VERIFY_IMPORT_STEP=n, while the system runs, when the script
     // reaches step n (counting from 0)
+    // (several, in order: "unit:path;unit/A:path" -- Import's several files)
     auto doImport = [&]() {
-        const char* imp = getenv("VERIFY_IMPORT");
-        std::string spec = imp; size_t c = spec.find(':');
-        int unit; uint16_t base;
-        std::wstring ierr = where(spec.substr(0, c), unit, base)
-            ? e.ImportFileToVolume(unit, W(spec.substr(c + 1)), base) : L"no such sub-volume";
-        fprintf(stderr, "import %s: %s\n", imp, ierr.empty() ? "OK" : std::string(ierr.begin(), ierr.end()).c_str());
+        std::string all = getenv("VERIFY_IMPORT");
+        for (size_t p0 = 0; p0 <= all.size(); ) {
+            size_t p1 = all.find(';', p0);
+            if (p1 == std::string::npos) p1 = all.size();
+            std::string spec = all.substr(p0, p1 - p0);
+            p0 = p1 + 1;
+            if (spec.empty()) continue;
+            size_t c = spec.find(':');
+            int unit; uint16_t base;
+            std::wstring ierr = where(spec.substr(0, c), unit, base)
+                ? e.ImportFileToVolume(unit, W(spec.substr(c + 1)), base) : L"no such sub-volume";
+            fprintf(stderr, "import %s: %s\n", spec.c_str(), ierr.empty() ? "OK" : std::string(ierr.begin(), ierr.end()).c_str());
+        }
     };
     // VERIFY_EXPORT="unit[/A/B]:NAME:path": Options > Export File, when the
     // script has ended; VERIFY_SUBVOLS=1 lists GetSubVolumes of every unit then

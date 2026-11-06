@@ -285,6 +285,22 @@ every file the directory says is text (kind 3) back into a PC text file
 (CR LF, no header), whatever its name: NAME.BAS, NAME.C, NAME.H too, not
 only NAME.TEXT and NAME.LIST.
 
+## Import and Export of several files; replacing (version 2.11)
+
+Options > **Import File** takes several PC files at once: Shift-click or Ctrl-click them in the
+file dialog.  They all go into the unit and the volume or sub-volume picked in the "Into" list
+(a nested one too: `BIGGY:/A/B`).  Options > **Export File** lets Shift and Ctrl select several
+files in its list (double-click a sub-volume to open it, `..` to back out); one file goes where
+the Save dialog says, several into the PC folder you pick, each under its UCSD name.  Neither
+asks before replacing: a file of that name on the volume (or in the PC folder) is replaced.
+Import does not replace a sub-volume (its files would go with it): that file is reported as not
+imported.  The message at the end lists every file done and every one that failed, and why.
+
+`ImportFileToVolume` now puts a file into the first free area that holds it (as the Filer
+does), not only after the last file: a file replaced leaves its blocks free, and the next file
+can use them.  The directory stays in block order.  `PSystemEngine::UcsdNameFor` gives the UCSD
+name a PC file gets.  run_verify's `VERIFY_IMPORT` takes several, separated by `;`.
+
 ## Volume files changed while the emulator runs
 
 The emulator reads each volume image into memory when it mounts it and
@@ -312,7 +328,7 @@ script (`WAIT "text"` / `TYPE "keys"`):
 
 Environment options: `VERIFY_RECLAIM=1` (reclaim the Z80 interpreter's
 memory), `VERIFY_UNIT10=path` .. `VERIFY_UNIT14=path` (mount units #10..#14 in place),
-`VERIFY_IMPORT=unit[/A/B]:path` (Options > Import File, into sub-volume A/B; with
+`VERIFY_IMPORT=unit[/A/B]:path[;...]` (Options > Import File, into sub-volume A/B; with
 `VERIFY_IMPORT_STEP=n` at script step n, while the system runs),
 `VERIFY_EXPORT=unit[/A/B]:NAME:path` (Options > Export File, after the script),
 `VERIFY_SUBVOLS=1` (list the sub-volumes of every unit),

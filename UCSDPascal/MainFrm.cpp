@@ -1524,16 +1524,31 @@ private:
     std::vector<PSystemEngine::SubVolume> m_into;   // the combo's items, by item data
 };
 
-void CMainFrame::OnOptionsImportFile() {
-    // ---- Step 1: pick the Windows source file ----
-    CFileDialog dlgFile(TRUE, nullptr, nullptr,
-        OFN_FILEMUSTEXIST | OFN_HIDEREADONLY | OFN_PATHMUSTEXIST,
-        L"All Files (*.*)|*.*||", this);
-    dlgFile.m_ofn.lpstrTitle = L"Select File to Import into UCSD Pascal Volume";
-    if (dlgFile.DoModal() != IDOK) return;
-    std::wstring srcPath = (LPCWSTR)dlgFile.GetPathName();
+// A list of lines for a message box: at most `most` of them, then "... and N more"
+static std::wstring ListLines(const std::vector<std::wstring>& lines, size_t most = 20) {
+    std::wstring t;
+    for (size_t i = 0; i < lines.size() && i < most; i++) t += L"  " + lines[i] + L"\r\n";
+    if (lines.size() > most) t += L"  ... and " + std::to_wstring(lines.size() - most) + L" more\r\n";
+    return t;
+}
 
-    // ---- Step 2: pick the target unit ----
+void CMainFrame::OnOptionsImportFile() {
+    // ---- Step 1: pick the Windows source files (Shift or Ctrl: several) ----
+    CFileDialog dlgFile(TRUE, nullptr, nullptr,
+        OFN_FILEMUSTEXIST | OFN_HIDEREADONLY | OFN_PATHMUSTEXIST | OFN_ALLOWMULTISELECT | OFN_EXPLORER,
+        L"All Files (*.*)|*.*||", this);
+    dlgFile.m_ofn.lpstrTitle = L"Select Files to Import into UCSD Pascal Volume (Shift or Ctrl: several)";
+    // (the names of many files: a buffer larger than MAX_PATH)
+    std::vector<wchar_t> nameBuf(256 * 1024, L'\0');
+    dlgFile.m_ofn.lpstrFile = nameBuf.data();
+    dlgFile.m_ofn.nMaxFile = (DWORD)nameBuf.size();
+    if (dlgFile.DoModal() != IDOK) return;
+    std::vector<std::wstring> srcPaths;
+    POSITION pos = dlgFile.GetStartPosition();
+    while (pos) srcPaths.push_back((LPCWSTR)dlgFile.GetNextPathName(pos));
+    if (srcPaths.empty()) return;
+
+    // ---- Step 2: pick the target unit and the volume or sub-volume ----
     // Build labels showing unit number, volume name, and load state
     static const struct { int unit; const wchar_t* desc; } kUnits[] = {
         { 4, L"Big Disk"     },
@@ -1567,35 +1582,29 @@ void CMainFrame::OnOptionsImportFile() {
     if (dlgUnit.DoModal() != IDOK) return;
     int targetUnit = dlgUnit.m_selectedUnit;
 
-    // ---- Step 3: perform the import ----
-    std::wstring err = m_engine->ImportFileToVolume(targetUnit, srcPath, dlgUnit.m_selectedBase);
-    if (!err.empty()) {
-        AfxMessageBox((L"Import failed:\r\n\r\n" + err).c_str(), MB_OK | MB_ICONERROR);
-        return;
-    }
-
-    // ---- Step 4: report success ----
-    // Derive the UCSD filename the same way ImportFileToVolume does
-    std::wstring baseName;
-    size_t slashPos = srcPath.find_last_of(L"\\/");
-    baseName = (slashPos == std::wstring::npos) ? srcPath : srcPath.substr(slashPos + 1);
-    for (wchar_t& c : baseName) c = (wchar_t)towupper(c);
-    std::wstring ucsdName;
-    for (wchar_t c : baseName) {
-        if ((c >= L'A' && c <= L'Z') || (c >= L'0' && c <= L'9') || c == L'.' || c == L'_') {
-            ucsdName += c;
-            if (ucsdName.size() == 15) break;
+    // ---- Step 3: import each one (a file of the same name there is replaced) ----
+    std::vector<std::wstring> done, failed;
+    for (auto& srcPath : srcPaths) {
+        std::wstring ucsdName = PSystemEngine::UcsdNameFor(srcPath);
+        std::wstring err = m_engine->ImportFileToVolume(targetUnit, srcPath, dlgUnit.m_selectedBase);
+        size_t slash = srcPath.find_last_of(L"\\/");
+        std::wstring shortName = slash == std::wstring::npos ? srcPath : srcPath.substr(slash + 1);
+        if (err.empty())
+            done.push_back(ucsdName + L"   (" + shortName + L")");
+        else {
+            for (auto& c : err) if (c == L'\r' || c == L'\n') c = L' ';
+            failed.push_back(shortName + L": " + err);
         }
     }
-    std::wstring volName = dlgUnit.m_selectedWhere;
-    CString msg;
-    msg.Format(L"Successfully imported:\r\n\r\n"
-               L"  Windows file: %s\r\n"
-               L"  UCSD name:    %s\r\n"
-               L"  Volume:       %s (unit #%d)\r\n\r\n"
-               L"The file is now visible in the UCSD Filer's directory listing.",
-               srcPath.c_str(), ucsdName.c_str(), volName.c_str(), targetUnit);
-    AfxMessageBox(msg, MB_OK | MB_ICONINFORMATION);
+
+    // ---- Step 4: report ----
+    std::wstring msg;
+    if (!done.empty())
+        msg = L"Imported into " + dlgUnit.m_selectedWhere + L" (unit #" + std::to_wstring(targetUnit) + L"):\r\n\r\n"
+            + ListLines(done) + L"\r\nThe files are now visible in the UCSD Filer's directory listing.";
+    if (!failed.empty())
+        msg += (msg.empty() ? L"" : L"\r\n\r\n") + std::wstring(L"Not imported:\r\n\r\n") + ListLines(failed);
+    AfxMessageBox(msg.c_str(), MB_OK | (failed.empty() ? MB_ICONINFORMATION : MB_ICONERROR));
 }
 
 // ---------------------------------------------------------------------------
@@ -1609,7 +1618,7 @@ void CMainFrame::OnOptionsImportFile() {
 class CExportFileDlg : public CDialog {
 public:
     int          m_selectedUnit = 4;  // in/out: unit number chosen
-    std::wstring m_selectedFile;      // out: the UCSD filename chosen
+    std::vector<std::wstring> m_selectedFiles;  // out: the UCSD filenames chosen (Shift, Ctrl: several)
     uint16_t     m_selectedBase = 0;  // out: the sub-volume it is in (its first block; 0: the volume)
     std::wstring m_where;             // out: e.g. "BIGGY:" or "BIGGY:/A/B"
     PSystemEngine* m_engine = nullptr;
@@ -1717,53 +1726,65 @@ public:
             return TRUE;
         }
         if (id == IDC_EXPORT_FILE_LIST && code == LBN_DBLCLK) {
+            // (an extended-selection list: the item double-clicked is the caret's)
             CListBox* lb = (CListBox*)GetDlgItem(IDC_EXPORT_FILE_LIST);
-            int listSel = lb->GetCurSel();
+            int listSel = lb->GetCaretIndex();
             if (listSel >= 0 && !OpenItem(listSel))
-                OnOK();                     // a file: export it
+                OnOK();                     // a file: export the selection
             return TRUE;
         }
         if (id == IDC_EXPORT_FILE_LIST && code == LBN_SELCHANGE) {
-            CListBox* lb = (CListBox*)GetDlgItem(IDC_EXPORT_FILE_LIST);
-            int listSel  = lb->GetCurSel();
-            bool haveSelection = (listSel >= 0 && (int)lb->GetItemData(listSel) != -1);
-            GetDlgItem(IDOK)->EnableWindow(haveSelection ? TRUE : FALSE);
-            if (haveSelection) {
-                // Use GetItemData to get the original directory index, not
-                // the (potentially sorted) list position.
-                int origIdx = (int)lb->GetItemData(listSel);
-                auto& entries = m_entries;
-                if (origIdx >= 0 && origIdx < (int)entries.size()) {
-                    auto& e = entries[origIdx];
-                    CString info;
-                    info.Format(e.subVolume ? L"Blocks %u-%u  |  %ld bytes  |  a sub-volume: double-click opens it"
-                                            : L"Blocks %u-%u  |  %ld bytes",
-                                (unsigned)e.firstBlock, (unsigned)(e.lastBlock - 1),
-                                e.ByteCount());
-                    GetDlgItem(IDC_EXPORT_INFO)->SetWindowTextW(info);
-                }
-            } else
-                GetDlgItem(IDC_EXPORT_INFO)->SetWindowTextW(L"");
+            // Use GetItemData to get the original directory index, not the
+            // (potentially sorted) list position.
+            std::vector<int> sel = SelectedEntries();
+            GetDlgItem(IDOK)->EnableWindow(sel.empty() ? FALSE : TRUE);
+            CString info;
+            if (sel.size() == 1) {
+                auto& e = m_entries[sel[0]];
+                info.Format(e.subVolume ? L"Blocks %u-%u  |  %ld bytes  |  a sub-volume: double-click opens it"
+                                        : L"Blocks %u-%u  |  %ld bytes",
+                            (unsigned)e.firstBlock, (unsigned)(e.lastBlock - 1),
+                            e.ByteCount());
+            } else if (sel.size() > 1) {
+                long total = 0;
+                for (int k : sel) total += m_entries[k].ByteCount();
+                info.Format(L"%d files  |  %ld bytes", (int)sel.size(), total);
+            }
+            GetDlgItem(IDC_EXPORT_INFO)->SetWindowTextW(info);
             return TRUE;
         }
         return CDialog::OnCommand(wParam, lParam);
     }
 
+    // The directory entries selected (their original directory indexes; not "..")
+    std::vector<int> SelectedEntries() {
+        std::vector<int> r;
+        CListBox* lb = (CListBox*)GetDlgItem(IDC_EXPORT_FILE_LIST);
+        int n = lb->GetSelCount();
+        if (n <= 0) return r;
+        std::vector<int> items(n);
+        lb->GetSelItems(n, items.data());
+        for (int listPos : items) {
+            // GetItemData holds the original directory index (not the list
+            // position), so this retrieves the right name even when the list
+            // is sorted differently from the directory order.
+            int origIdx = (int)lb->GetItemData(listPos);
+            if (origIdx >= 0 && origIdx < (int)m_names.size()) r.push_back(origIdx);
+        }
+        return r;
+    }
+
     void OnOK() override {
         CListBox* lb = (CListBox*)GetDlgItem(IDC_EXPORT_FILE_LIST);
-        int listSel = lb->GetCurSel();
-        if (listSel >= 0) {
-            // GetItemData holds the original directory index (not the list
-            // position), so this correctly retrieves the right name even when
-            // the list is sorted differently from the directory order.
-            int origIdx = (int)lb->GetItemData(listSel);
-            if (origIdx == -1) {            // .. (RETURN on it): back up, not an export
-                OpenItem(listSel);
-                return;
-            }
-            if (origIdx >= 0 && origIdx < (int)m_names.size())
-                m_selectedFile = m_names[origIdx];
+        std::vector<int> sel = SelectedEntries();
+        if (sel.empty()) {
+            int caret = lb->GetCaretIndex();
+            if (caret >= 0 && (int)lb->GetItemData(caret) == -1)
+                OpenItem(caret);            // .. (RETURN on it): back up, not an export
+            return;
         }
+        m_selectedFiles.clear();
+        for (int k : sel) m_selectedFiles.push_back(m_names[k]);
         m_selectedBase = Base();
         CDialog::OnOK();
     }
@@ -1774,37 +1795,58 @@ private:
 };
 
 void CMainFrame::OnOptionsExportFile() {
-    // ---- Step 1: pick source volume and file ----
+    // ---- Step 1: pick source volume (or sub-volume) and files ----
     CExportFileDlg dlgExport(m_engine.get(), this);
-    if (dlgExport.DoModal() != IDOK || dlgExport.m_selectedFile.empty()) return;
+    if (dlgExport.DoModal() != IDOK || dlgExport.m_selectedFiles.empty()) return;
 
-    int          srcUnit = dlgExport.m_selectedUnit;
-    std::wstring ucsdName = dlgExport.m_selectedFile;
+    int srcUnit = dlgExport.m_selectedUnit;
+    const auto& names = dlgExport.m_selectedFiles;
 
-    // ---- Step 2: pick Windows destination ----
-    // Default the filename to the UCSD name (already uppercase)
-    CFileDialog dlgSave(FALSE, nullptr, ucsdName.c_str(),
-        OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST,
-        L"All Files (*.*)|*.*||", this);
-    dlgSave.m_ofn.lpstrTitle = L"Export UCSD File to Windows";
-    if (dlgSave.DoModal() != IDOK) return;
-    std::wstring destPath = (LPCWSTR)dlgSave.GetPathName();
+    // A UCSD name as a Windows file name (the characters Windows refuses: _)
+    auto windowsName = [](std::wstring n) {
+        for (auto& c : n) if (wcschr(L"\\/:*?\"<>|", c)) c = L'_';
+        return n;
+    };
 
-    // ---- Step 3: export ----
-    std::wstring err = m_engine->ExportFileFromVolume(srcUnit, ucsdName, destPath, dlgExport.m_selectedBase);
-    if (!err.empty()) {
-        AfxMessageBox((L"Export failed:\r\n\r\n" + err).c_str(), MB_OK | MB_ICONERROR);
-        return;
+    // ---- Step 2: pick Windows destination: one file's name, or a folder for several ----
+    // (a file there of that name is replaced, with no question)
+    std::vector<std::wstring> dests;
+    if (names.size() == 1) {
+        // Default the filename to the UCSD name (already uppercase)
+        CFileDialog dlgSave(FALSE, nullptr, windowsName(names[0]).c_str(),
+            OFN_PATHMUSTEXIST | OFN_HIDEREADONLY,
+            L"All Files (*.*)|*.*||", this);
+        dlgSave.m_ofn.lpstrTitle = L"Export UCSD File to Windows";
+        if (dlgSave.DoModal() != IDOK) return;
+        dests.push_back((LPCWSTR)dlgSave.GetPathName());
+    } else {
+        CFolderPickerDialog dlgDir(nullptr, 0, this);
+        dlgDir.m_ofn.lpstrTitle = L"Export UCSD Files to this Windows Folder";
+        if (dlgDir.DoModal() != IDOK) return;
+        std::wstring folder = (LPCWSTR)dlgDir.GetPathName();
+        if (!folder.empty() && folder.back() != L'\\') folder += L'\\';
+        for (auto& n : names) dests.push_back(folder + windowsName(n));
     }
 
-    // ---- Step 4: report success ----
-    std::wstring volName = dlgExport.m_where;
-    CString msg;
-    msg.Format(L"Successfully exported:\r\n\r\n"
-               L"  UCSD file: %s  (on %s, unit #%d)\r\n"
-               L"  Windows:   %s",
-               ucsdName.c_str(), volName.c_str(), srcUnit, destPath.c_str());
-    AfxMessageBox(msg, MB_OK | MB_ICONINFORMATION);
+    // ---- Step 3: export each ----
+    std::vector<std::wstring> done, failed;
+    for (size_t i = 0; i < names.size(); i++) {
+        std::wstring err = m_engine->ExportFileFromVolume(srcUnit, names[i], dests[i], dlgExport.m_selectedBase);
+        if (err.empty())
+            done.push_back(names[i] + L"  ->  " + dests[i]);
+        else {
+            for (auto& c : err) if (c == L'\r' || c == L'\n') c = L' ';
+            failed.push_back(names[i] + L": " + err);
+        }
+    }
+
+    // ---- Step 4: report ----
+    std::wstring msg;
+    if (!done.empty())
+        msg = L"Exported from " + dlgExport.m_where + L" (unit #" + std::to_wstring(srcUnit) + L"):\r\n\r\n" + ListLines(done);
+    if (!failed.empty())
+        msg += (msg.empty() ? L"" : L"\r\n") + std::wstring(L"Not exported:\r\n\r\n") + ListLines(failed);
+    AfxMessageBox(msg.c_str(), MB_OK | (failed.empty() ? MB_ICONINFORMATION : MB_ICONERROR));
 }
 
 // Shows live per-opcode dispatch counts (see PSystemEngine's
