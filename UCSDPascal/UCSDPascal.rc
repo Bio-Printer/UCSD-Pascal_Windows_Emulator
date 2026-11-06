@@ -188,6 +188,7 @@ BEGIN
     LISTBOX         IDC_EXPORT_FILE_LIST, 8, 37, 284, 148,
                     LBS_NOTIFY | LBS_EXTENDEDSEL | LBS_NOINTEGRALHEIGHT | WS_VSCROLL | WS_TABSTOP
     LTEXT           "", IDC_EXPORT_INFO, 8, 188, 200, 9
+    PUSHBUTTON      "Export &All...", IDC_EXPORT_ALL, 8, 198, 64, 14
     DEFPUSHBUTTON   "Export...", IDOK,     186, 198, 50, 14
     PUSHBUTTON      "Cancel",   IDCANCEL, 242, 198, 50, 14, WS_GROUP
 END
@@ -201,8 +202,8 @@ IDR_MAINFRAME           ICON                    "res\\UCSDPascal.ico"
 // Version
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 2,11,0,0    // keep in sync with APP_VERSION_W in Version.h (currently "2.11")
- PRODUCTVERSION 2,11,0,0
+ FILEVERSION 2,12,0,0    // keep in sync with APP_VERSION_W in Version.h (currently "2.12")
+ PRODUCTVERSION 2,12,0,0
  FILEFLAGSMASK 0x3fL
  FILEFLAGS 0x0L
  FILEOS 0x40004L
@@ -214,9 +215,9 @@ BEGIN
         BLOCK "040904b0"
         BEGIN
             VALUE "FileDescription",  "UCSD Pascal II.0 Emulator"
-            VALUE "FileVersion",      "2.11"
+            VALUE "FileVersion",      "2.12"
             VALUE "ProductName",      "UCSD Pascal II.0 Emulator"
-            VALUE "ProductVersion",   "2.11"
+            VALUE "ProductVersion",   "2.12"
         END
     END
     BLOCK "VarFileInfo"

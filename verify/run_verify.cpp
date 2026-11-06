@@ -71,6 +71,17 @@ int main(int argc, char** argv) {
             for (int u : { 4, 5, 9, 10, 11, 12, 13, 14 })
                 for (auto& sv : e.GetSubVolumes(u))
                     fprintf(stderr, "subvolume #%d:/%s at block %u\n", u, std::string(sv.path.begin(), sv.path.end()).c_str(), (unsigned)sv.base);
+        // VERIFY_EXPORT_TREE="unit[/A/B]:dir": Export File's Export All
+        if (const char* tree = getenv("VERIFY_EXPORT_TREE")) {
+            std::string spec = tree; size_t c = spec.find(':');
+            int unit; uint16_t base;
+            if (where(spec.substr(0, c), unit, base)) {
+                auto r = e.ExportTreeFromVolume(unit, base, W(spec.substr(c + 1)));
+                fprintf(stderr, "export tree %s: %d files, %d folders, %d failed\n", tree, r.files, r.folders, (int)r.failed.size());
+                for (auto& f : r.failed) fprintf(stderr, "  failed %s\n", std::string(f.begin(), f.end()).c_str());
+            } else
+                fprintf(stderr, "export tree %s: no such sub-volume\n", tree);
+        }
         const char* exp = getenv("VERIFY_EXPORT");
         if (!exp) return;
         std::string spec = exp; size_t c = spec.find(':'), c2 = spec.find(':', c + 1);

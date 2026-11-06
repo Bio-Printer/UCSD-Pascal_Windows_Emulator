@@ -79,6 +79,7 @@ protected:
     afx_msg void OnOptionsTrace();
     afx_msg void OnOptionsImportFile();
     afx_msg void OnOptionsExportFile();
+    void ExportAll(int unit, uint16_t base, const std::wstring& where, const std::wstring& name);
     afx_msg void OnOptionsExecModePCode();
     afx_msg void OnOptionsExecModeZ80();
     afx_msg void OnOptionsPreserveZ80Regs();

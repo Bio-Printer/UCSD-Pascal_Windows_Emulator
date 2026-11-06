@@ -1619,6 +1619,7 @@ class CExportFileDlg : public CDialog {
 public:
     int          m_selectedUnit = 4;  // in/out: unit number chosen
     std::vector<std::wstring> m_selectedFiles;  // out: the UCSD filenames chosen (Shift, Ctrl: several)
+    std::wstring m_allName;           // out, Export All: the volume's or sub-volume's name
     uint16_t     m_selectedBase = 0;  // out: the sub-volume it is in (its first block; 0: the volume)
     std::wstring m_where;             // out: e.g. "BIGGY:" or "BIGGY:/A/B"
     PSystemEngine* m_engine = nullptr;
@@ -1667,7 +1668,7 @@ public:
         m_where = m_engine->GetVolumeNameForUnit(m_selectedUnit) + L":";
         for (auto& o : m_open) m_where += L"/" + o.name;
         GetDlgItem(IDC_EXPORT_WHERE)->SetWindowTextW(
-            (L"Files on " + m_where + L"  (double-click a sub-volume to open it):").c_str());
+            (L"Files on " + m_where + L"  (double-click a sub-volume to open it; Export All: all of it):").c_str());
         if (!m_open.empty())
             lb->SetItemData(lb->AddString(L"..                (back up)"), (DWORD_PTR)-1);
         m_entries = m_engine->GetVolumeDirectory(m_selectedUnit, Base());
@@ -1717,6 +1718,14 @@ public:
     BOOL OnCommand(WPARAM wParam, LPARAM lParam) override {
         UINT id   = LOWORD(wParam);
         UINT code = HIWORD(wParam);
+        if (id == IDC_EXPORT_ALL && code == BN_CLICKED) {
+            // the volume or sub-volume shown, all of it (OnOptionsExportFile asks where)
+            m_selectedFiles.clear();
+            m_selectedBase = Base();
+            m_allName = m_open.empty() ? m_engine->GetVolumeNameForUnit(m_selectedUnit) : m_open.back().name;
+            EndDialog(IDC_EXPORT_ALL);
+            return TRUE;
+        }
         if (id == IDC_EXPORT_UNIT_COMBO && code == CBN_SELCHANGE) {
             CComboBox* cb = (CComboBox*)GetDlgItem(IDC_EXPORT_UNIT_COMBO);
             int sel = cb->GetCurSel();
@@ -1797,7 +1806,12 @@ private:
 void CMainFrame::OnOptionsExportFile() {
     // ---- Step 1: pick source volume (or sub-volume) and files ----
     CExportFileDlg dlgExport(m_engine.get(), this);
-    if (dlgExport.DoModal() != IDOK || dlgExport.m_selectedFiles.empty()) return;
+    INT_PTR answer = dlgExport.DoModal();
+    if (answer == IDC_EXPORT_ALL) {
+        ExportAll(dlgExport.m_selectedUnit, dlgExport.m_selectedBase, dlgExport.m_where, dlgExport.m_allName);
+        return;
+    }
+    if (answer != IDOK || dlgExport.m_selectedFiles.empty()) return;
 
     int srcUnit = dlgExport.m_selectedUnit;
     const auto& names = dlgExport.m_selectedFiles;
@@ -1847,6 +1861,28 @@ void CMainFrame::OnOptionsExportFile() {
     if (!failed.empty())
         msg += (msg.empty() ? L"" : L"\r\n") + std::wstring(L"Not exported:\r\n\r\n") + ListLines(failed);
     AfxMessageBox(msg.c_str(), MB_OK | (failed.empty() ? MB_ICONINFORMATION : MB_ICONERROR));
+}
+
+// Export File's Export All: the volume (or sub-volume) at base, every file and
+// every sub-volume in it, into a folder of its name in the Windows folder picked
+// (a sub-volume a folder; text files without their header, CR LF; files there of
+// those names replaced)
+void CMainFrame::ExportAll(int unit, uint16_t base, const std::wstring& where, const std::wstring& name) {
+    CFolderPickerDialog dlgDir(nullptr, 0, this);
+    std::wstring title = L"Export all of " + where + L" into this Windows folder (as " + PSystemEngine::WindowsNameFor(name) + L"\\)";
+    dlgDir.m_ofn.lpstrTitle = title.c_str();
+    if (dlgDir.DoModal() != IDOK) return;
+    std::wstring folder = (LPCWSTR)dlgDir.GetPathName();
+    if (!folder.empty() && folder.back() != L'\\') folder += L'\\';
+    folder += PSystemEngine::WindowsNameFor(name);
+    CWaitCursor wait;
+    PSystemEngine::TreeExport r = m_engine->ExportTreeFromVolume(unit, base, folder);
+    std::wstring msg = L"Exported " + where + L" (unit #" + std::to_wstring(unit) + L") into\r\n  " + folder
+        + L"\r\n\r\n  " + std::to_wstring(r.files) + L" files, " + std::to_wstring(r.folders) + L" folders"
+          L" (each sub-volume a folder; text files as Windows text).";
+    if (!r.failed.empty())
+        msg += L"\r\n\r\nNot exported:\r\n\r\n" + ListLines(r.failed);
+    AfxMessageBox(msg.c_str(), MB_OK | (r.failed.empty() ? MB_ICONINFORMATION : MB_ICONERROR));
 }
 
 // Shows live per-opcode dispatch counts (see PSystemEngine's

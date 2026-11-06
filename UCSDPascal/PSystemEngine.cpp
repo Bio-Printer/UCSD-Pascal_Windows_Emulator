@@ -1683,6 +1683,63 @@ std::wstring PSystemEngine::ExportFileFromVolume(int unit, const std::wstring& u
     return L""; // success
 }
 
+std::wstring PSystemEngine::WindowsNameFor(const std::wstring& ucsdName) {
+    std::wstring n = ucsdName;
+    for (auto& c : n)
+        if (c < 32 || wcschr(L"\\/:*?\"<>|", c)) c = L'_';
+    // (Windows drops a name's last dots and blanks: kept as _)
+    while (!n.empty() && (n.back() == L'.' || n.back() == L' ')) n.back() = L'_';
+    if (n.empty()) n = L"_";
+    return n;
+}
+
+PSystemEngine::TreeExport PSystemEngine::ExportTreeFromVolume(int unit, uint16_t base, const std::wstring& winDir) const {
+#ifdef _WIN32
+    const std::wstring sep = L"\\";
+#else
+    const std::wstring sep = L"/";
+#endif
+    TreeExport r;
+    // (the folders still to do: the sub-volume's first block, its Windows
+    // folder, its path for messages, its depth)
+    struct Todo { uint16_t base; std::wstring dir, path; int depth; };
+    std::vector<Todo> todo = { { base, winDir, L"", 0 } };
+    while (!todo.empty()) {
+        Todo t = todo.back();
+        todo.pop_back();
+        ::CreateDirectoryW(t.dir.c_str(), nullptr);     // (already there: fine)
+        FILE* probe = nullptr;
+        std::wstring probeName = t.dir + sep + L"~ucsd-export.tmp";
+        _wfopen_s(&probe, probeName.c_str(), L"wb");
+        if (!probe) {
+            r.failed.push_back((t.path.empty() ? L"" : t.path + L"/") + L": cannot make the folder " + t.dir);
+            continue;
+        }
+        fclose(probe);
+        ::DeleteFileW(probeName.c_str());
+        r.folders++;
+        for (auto& e : GetVolumeDirectory(unit, t.base)) {
+            std::wstring where = t.path.empty() ? e.name : t.path + L"/" + e.name;
+            std::wstring dest = t.dir + sep + WindowsNameFor(e.name);
+            if (e.subVolume) {
+                if (t.depth >= 8)
+                    r.failed.push_back(where + L"/: sub-volumes nested deeper than 8");
+                else
+                    todo.push_back({ (uint16_t)(t.base + e.firstBlock), dest, where, t.depth + 1 });
+                continue;
+            }
+            std::wstring err = ExportFileFromVolume(unit, e.name, dest, t.base);
+            if (err.empty())
+                r.files++;
+            else {
+                for (auto& c : err) if (c == L'\r' || c == L'\n') c = L' ';
+                r.failed.push_back(where + L": " + err);
+            }
+        }
+    }
+    return r;
+}
+
 std::wstring PSystemEngine::ImportFileToVolume(int unit, const std::wstring& windowsFilePath, uint16_t base) {
     int drive = UnitToDriveIndex(unit);
     if (drive < 0) return L"Invalid unit number (use 4, 5, 9, 10, 11, 12, 13 or 14).";

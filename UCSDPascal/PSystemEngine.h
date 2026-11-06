@@ -455,6 +455,19 @@ public:
     std::wstring ExportFileFromVolume(int unit, const std::wstring& ucsdName,
                                       const std::wstring& windowsDestPath, uint16_t base = 0) const;
 
+    // Export a whole volume (base 0) or sub-volume (base: its first block) into
+    // the Windows folder winDir (made if it is not there): every file in it
+    // as ExportFileFromVolume does (a text file without its header, CR LF),
+    // every sub-volume as a folder of its name holding its files, at any depth
+    // (8 at most).  A Windows file or folder of that name is replaced/used.
+    struct TreeExport {
+        int files = 0, folders = 0;          // exported; folders: winDir and those below it
+        std::vector<std::wstring> failed;    // "A/NAME: why" for each that was not
+    };
+    TreeExport ExportTreeFromVolume(int unit, uint16_t base, const std::wstring& winDir) const;
+    // A UCSD name as a Windows file name: the characters Windows refuses are _
+    static std::wstring WindowsNameFor(const std::wstring& ucsdName);
+
 private:
     Z80 m_cpu;
     uint8_t m_mem[65536];

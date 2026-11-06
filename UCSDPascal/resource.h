@@ -69,6 +69,7 @@
 #define IDC_EXPORT_FILE_LIST    1021
 #define IDC_EXPORT_INFO         1022
 #define IDC_EXPORT_WHERE        1023
+#define IDC_EXPORT_ALL          1024
 
 #define IDC_TRACE_ENABLE        1030
 #define IDC_TRACE_PATH          1031

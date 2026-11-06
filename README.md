@@ -301,6 +301,19 @@ does), not only after the last file: a file replaced leaves its blocks free, and
 can use them.  The directory stays in block order.  `PSystemEngine::UcsdNameFor` gives the UCSD
 name a PC file gets.  run_verify's `VERIFY_IMPORT` takes several, separated by `;`.
 
+## Export All: a whole volume or sub-volume to a Windows folder (version 2.12)
+
+Options > **Export File** has an **Export All...** button: it exports what the dialog shows --
+the unit's volume, or the sub-volume opened in it (double-click) -- all of it, into a folder of
+its name in the Windows folder you pick: `BASIC2:` into `C:\Work\BASIC2\`, its sub-volume
+`SRC` into `C:\Work\BASIC2\SRC\`, `MAP/W0` into `...\MAP\W0\`, at any depth.  Each file is
+exported as Export File does one: a text file (kind 3, or NAME.TEXT, NAME.LIST) without its 1K
+header, its indentation codes expanded, CR LF line ends; every other file byte for byte.  A
+Windows file of the same name is replaced, with no question.  The message at the end counts the
+files and folders and lists any that failed.  A name Windows refuses (`\ / : * ? " < > |`, a
+last dot) gets `_` there (`PSystemEngine::WindowsNameFor`); `ExportTreeFromVolume` does the
+work, and run_verify's `VERIFY_EXPORT_TREE=unit[/A/B]:dir` runs it.
+
 ## Volume files changed while the emulator runs
 
 The emulator reads each volume image into memory when it mounts it and
