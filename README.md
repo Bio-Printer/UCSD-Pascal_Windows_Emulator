@@ -367,6 +367,22 @@ SDL checks make an error (C4996), and `NativeMount.inc` used `std::min`, which w
 `min` macro breaks (C2589).  The clock's text is read by hand now, and the length compared
 without `std::min`.  Nothing else changed.
 
+## Version 2.16: code segments read straight to where they go
+
+The native segment loader (`NativeSegLoad.inc`) used to read every code segment from the disk
+image into a buffer as big as the segment, then copy it onto the P-machine stack (or into
+I-space in Harvard mode).  It now reads it straight there when that memory is free -- between
+the heap (NP) and the stack (SP), or I-space below the code stack -- and skips the copy.
+Writing memory nothing uses yet changes nothing a later step can see, also when the load is
+then refused (stack overflow, an assembly-language procedure: the Z80 READSEG reads the same
+bytes to the same place).  Everything else reads into the buffer as before: a segment that
+would reach into the heap or past SP (GSEG's own parameter word), and every load with
+Preserve Z80 Register Compatibility on, so Verify P-System is unchanged.  For the embedded
+port ([UCSD-Pascal-on-RP2040](https://github.com/Bio-Printer/UCSD-Pascal-on-RP2040)) this
+removes a heap block as big as the largest segment (vi's is 36.5 KB).  The host defines
+`PM_SEG_INPLACE` / `PM_SEG_READ` (`SegInPlace`, `NativeDiskReadTo`); `linux-harness/`, which
+does not, keeps the buffer.
+
 ## Volume files changed while the emulator runs
 
 The emulator reads each volume image into memory when it mounts it and

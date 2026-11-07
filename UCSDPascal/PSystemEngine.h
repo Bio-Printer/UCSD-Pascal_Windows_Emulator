@@ -739,6 +739,8 @@ private:
     bool NativeBldmscw();
     bool NativeBldmscwProc(uint8_t procNum, uint16_t retIpc);   // NativeBldmscw with the procedure number and return IPC given (CXP, CSP 138)
     bool NativeDiskRead(uint16_t unit, uint16_t block, uint16_t len, std::vector<uint8_t>& out);
+    bool NativeDiskReadTo(uint16_t unit, uint16_t block, uint16_t len, uint8_t* dst);   // into dst (2.16)
+    uint8_t* SegInPlace(uint16_t segbot, uint16_t len);      // where a segment can be read in place (2.16), or nullptr
     bool NativeBiosCall(uint8_t fn, uint8_t c, uint8_t* aOut, bool dryRun);
 
     std::vector<uint8_t>* FdcImage();

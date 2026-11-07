@@ -34,9 +34,13 @@
 // The constant pool (see SetHarvard): find a loaded segment's LSA/LPA constants
 // and their pool size (into the SegLoadPlan), and install them once the code is
 // in I-space.
-#define PM_CONST_SCAN(p) do { ScanSegConsts((p).image.data(), (p).len, (p).cKey, (p).cSrc, (p).cCnt, m_constUnwalked); \
+#define PM_CONST_SCAN(p) do { ScanSegConsts((p).image, (p).len, (p).cKey, (p).cSrc, (p).cCnt, m_constUnwalked); \
                               (p).poolLen = 0; for (uint16_t n_ : (p).cCnt) (p).poolLen = (uint16_t)((p).poolLen + ((n_ + 1) & ~1)); } while (0)
 #define PM_CONST_INSTALL(p) ConstPoolInstall((p).segbot, (p).cKey, (p).cSrc, (p).cCnt, (p).dBot)
+// A segment read straight to where it goes (2.16; NativeSegLoad.inc): SegInPlace says
+// where, when that memory is free; NativeDiskReadTo reads it there.
+#define PM_SEG_INPLACE(p) SegInPlace((p).segbot, (p).len)
+#define PM_SEG_READ(p, dst) NativeDiskReadTo((p).unit, (p).block, (p).len, (dst))
 #define PM_ERR_ARM (m_errShadowPending = true)
 #define PM_ERR_SHADOW(mscw) HarvardErrShadow(mscw)
 #define PM_CODE_UNIT kCodeUnit
@@ -1605,6 +1609,29 @@ bool PSystemEngine::NativeDiskRead(uint16_t unit, uint16_t block, uint16_t len, 
     size_t off = (size_t)block * 512;
     if (off + len > img->size()) return false;
     out.assign(img->begin() + off, img->begin() + off + len);
+    return true;
+}
+
+// Where a segment of len bytes at segbot can be read straight to (2.16), or nullptr:
+// memory nothing uses yet -- in the Harvard layout I-space below the code stack
+// (CodePlace put it there), otherwise the P-machine memory between the heap (NP)
+// and the stack (SP). Not with Z80 register compatibility on, so that mode (and
+// Verify P-System) reads into a buffer exactly as before.
+uint8_t* PSystemEngine::SegInPlace(uint16_t segbot, uint16_t len) {
+    if (m_preserveZ80RegisterCompat || len == 0 || (uint32_t)segbot + len > 0x10000u) return nullptr;
+    if (m_harvard) return m_codeMem + segbot;
+    const uint16_t np = (uint16_t)(m_mem[PM_V(0x0240)] | (m_mem[(uint16_t)(PM_V(0x0240) + 1)] << 8));
+    if (segbot < np || (uint32_t)segbot + len > m_cpu.r.SP) return nullptr;
+    return m_mem + segbot;
+}
+
+// NativeDiskRead into memory the caller gives (len bytes at dst).
+bool PSystemEngine::NativeDiskReadTo(uint16_t unit, uint16_t block, uint16_t len, uint8_t* dst) {
+    const std::vector<uint8_t>* img = DriveImage(UnitValueToDrive((uint8_t)unit));
+    if (!img || img->empty()) return false;
+    size_t off = (size_t)block * 512;
+    if (off + len > img->size()) return false;
+    memcpy(dst, img->data() + off, len);
     return true;
 }
 

@@ -10,6 +10,12 @@
 //   slProbe(seg, spP, plan)  read-only: SEGTBL lookup, disk read into a
 //                            buffer, (NEWSEG)^ = seg check. spP = the P-code
 //                            SP at the moment GETSEG is CALLed.
+//   (slLoad, below, reads the segment straight to where it goes when the host
+//   says that memory is free -- PM_SEG_INPLACE(plan), with PM_SEG_READ(plan,
+//   dst) to read it there (2.16): between the heap and the stack, or I-space
+//   below the code stack. Writing free memory early changes nothing a later
+//   step can see, and saves a buffer as big as the segment. A host that does
+//   not define PM_SEG_INPLACE always reads into the plan's buffer.)
 //   slCommit(plan)           performs READSEG's and GSGREAD's writes exactly:
 //                            TPROC vars, the segment bytes (onto the stack,
 //                            SP := SEGBOT), IORSLT := 0, relocation, then
@@ -35,7 +41,9 @@ struct SegLoadPlan {
     uint8_t  seg = 0;
     uint16_t segtp = 0, len = 0, unit = 0, block = 0, newseg = 0, segbot = 0, refLo = 0;
     uint16_t dTop = 0, dBot = 0;                         // its stack copy in D-space (see above)
-    std::vector<uint8_t> image;
+    const uint8_t* image = nullptr;                      // the segment's bytes: in place, or buf's
+    std::vector<uint8_t> buf;                            // when not read in place
+    bool inPlace = false;                                // image is the segment's own memory (slCommit copies nothing)
     std::vector<uint16_t> cKey, cSrc, cCnt;              // Harvard: the constant pool (PM_CONST_SCAN)
     uint16_t poolLen = 0;
     bool inImage(uint16_t a, uint16_t n) const {
@@ -46,6 +54,24 @@ struct SegLoadPlan {
         uint16_t off = (uint16_t)(a - segbot);
         return (uint16_t)(image[off] | (image[(uint16_t)(off + 1)] << 8));
     }
+};
+// Read the segment: to where it goes (allowInPlace and the host says that memory is free), else into p.buf.
+auto slRead = [&](SegLoadPlan& p, bool allowInPlace) -> bool {
+    p.inPlace = false; p.image = nullptr;
+#ifdef PM_SEG_INPLACE
+    if (allowInPlace) {
+        if (uint8_t* dst = PM_SEG_INPLACE(p)) {
+            if (!PM_SEG_READ(p, dst)) return false;
+            p.image = dst; p.inPlace = true;
+            return true;
+        }
+    }
+#else
+    (void)allowInPlace;
+#endif
+    if (!NativeDiskRead(p.unit, p.block, p.len, p.buf) || p.buf.size() != p.len) return false;
+    p.image = p.buf.data();
+    return true;
 };
 auto slRd   = [&](uint16_t a) -> uint16_t { return (uint16_t)(PM_MEM[a] | (PM_MEM[(uint16_t)(a + 1)] << 8)); };
 auto slWr   = [&](uint16_t a, uint16_t v) { PM_MEM[a] = (uint8_t)(v & 0xFF); PM_MEM[(uint16_t)(a + 1)] = (uint8_t)(v >> 8); };
@@ -66,7 +92,7 @@ auto slProbe = [&](uint8_t seg, uint16_t spP, SegLoadPlan& p) -> bool {
     h = slIncL(h); h = (uint16_t)(h + 1);               // INC L; INC HL
     p.segbot = h;
     if (!p.inImage(p.newseg, 2)) return false;
-    if (!NativeDiskRead(p.unit, p.block, p.len, p.image) || p.image.size() != p.len) return false;
+    if (!slRead(p, false)) return false;                // (read-only: never in place)
     if (p.image[(uint16_t)(p.newseg - p.segbot)] != seg) return false; // NOPROC
     p.refLo = slDecL((uint16_t)(PM_V(0x0251) + 4 * (uint16_t)seg));          // GETSEG's HL at "JP Z,GSGREAD"
     return true;
@@ -106,7 +132,7 @@ auto slLoad = [&](uint8_t seg, uint16_t spP, SegLoadPlan& p) -> int {
         p.segbot = h;
     }
     if (!p.inImage(p.newseg, 2)) return SL_DECLINE;
-    if (NativeDiskRead(p.unit, p.block, p.len, p.image) && p.image.size() == p.len) {
+    if (slRead(p, true)) {
         if (p.image[(uint16_t)(p.newseg - p.segbot)] != seg) return SL_WRONGSEG;
         p.dTop = spP;
         if (PM_HARVARD) {                            // the constant pool takes the segment's place on the stack
@@ -147,7 +173,7 @@ auto slError = [&](SegLoadPlan& p, int kind, uint16_t getsegRet) -> uint16_t {
         PM_MEM[PM_V(0x02E4)] = PortIn(0xCF);                // status -> IORSLT
         return 0x0408;                                // JP NZ,SYIOER
     }
-    if (!PM_HARVARD)                                  // (Harvard: not on the code stack, so not read in)
+    if (!PM_HARVARD && !p.inPlace)                    // (Harvard: not on the code stack, so not read in; in place: already there)
         for (uint16_t i = 0; i < p.len; i++) PM_CODEW8((uint16_t)(p.segbot + i), p.image[i]);   // read in
     return 0x03DF;                                    // wrong segment: JP NZ,NOPROC
 };
@@ -173,7 +199,8 @@ auto slCommit = [&](SegLoadPlan& p) {
     slWr(PM_V(0x02C8), p.segtp);             // SEGTP
     slWr(PM_V(0x02CA), p.newseg);            // NEWSEG
     slWr(PM_V(0x02BC), p.segbot);            // SEGBOT
-    for (uint16_t i = 0; i < p.len; i++) PM_CODEW8((uint16_t)(p.segbot + i), p.image[i]);
+    if (!p.inPlace)                          // (read in place: the bytes are already there)
+        for (uint16_t i = 0; i < p.len; i++) PM_CODEW8((uint16_t)(p.segbot + i), p.image[i]);
     slWr(PM_V(0x02E4), 0);                   // IORSLT := 0 (GETU; SYSRD success)
     // SYSRD -> SYSIO / GETU parameter-space writes (later Z80 I/O code can
     // pick up leftovers from these, so they matter for register fidelity):
