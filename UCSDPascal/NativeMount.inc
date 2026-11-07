@@ -33,7 +33,7 @@ if (procNum == 140 || procNum == 141) {
         const std::string inName = ImageFileName(inUnit);
         mountResult = -1;
         if (!inName.empty() && inSize > 0) {
-            mountResult = (int)std::min(inName.size(), (size_t)(inSize - 1));
+            mountResult = (int)inName.size() < inSize - 1 ? (int)inName.size() : inSize - 1;   // (not std::min: windows.h's min macro)
             for (int i = 0; i < mountResult; i++)
                 m_mem[(uint16_t)(inAddr + i)] = (uint8_t)inName[i];
             m_mem[(uint16_t)(inAddr + mountResult)] = 0;

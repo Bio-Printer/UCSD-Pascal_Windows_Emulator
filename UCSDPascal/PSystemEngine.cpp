@@ -52,6 +52,7 @@
 #include <cmath>
 #include <climits>
 #include <cstdlib>
+#include <cctype>
 #include <ctime>
 #include <chrono>
 #include <filesystem>
@@ -1303,10 +1304,20 @@ static void SetFileNaiveTime(const std::wstring& path, long long t) {
 }
 
 bool PSystemEngine::ParseClockText(const std::string& s, long long& t) {
-    int y, mo, d, h, mi, se;
-    char sep;
-    if (sscanf(s.c_str(), "%d-%d-%d%c%d:%d:%d", &y, &mo, &d, &sep, &h, &mi, &se) != 7 || (sep != 'T' && sep != ' '))
-        return false;
+    // YYYY-MM-DDTHH:MM:SS (or a blank for the T), read by hand: no sscanf (MSVC's SDL checks refuse it)
+    int v[6] = {}, k = 0;
+    size_t i = 0;
+    const char seps[6] = { '-', '-', 'T', ':', ':', 0 };
+    for (k = 0; k < 6; k++) {
+        if (i >= s.size() || !isdigit((unsigned char)s[i])) return false;
+        while (i < s.size() && isdigit((unsigned char)s[i]) && v[k] < 100000)
+            v[k] = v[k] * 10 + (s[i++] - '0');
+        if (k < 5) {
+            if (i >= s.size() || !(s[i] == seps[k] || (k == 2 && s[i] == ' '))) return false;
+            i++;
+        }
+    }
+    const int y = v[0], mo = v[1], d = v[2], h = v[3], mi = v[4], se = v[5];
     if (mo < 1 || mo > 12 || d < 1 || d > 31 || h < 0 || h > 23 || mi < 0 || mi > 59 || se < 0 || se > 59) return false;
     t = DaysFromCivil(y, (unsigned)mo, (unsigned)d) * 86400LL + h * 3600 + mi * 60 + se;
     return true;

@@ -360,6 +360,13 @@ next launch).  IMAGENAME gives the image file's name on a unit (no folder), -1 w
 The operating system notices the new volume when a file on it is next looked for (FETCHDIR:
 a directory whose volume name differs from the unit's), so MOUNT opens `#n:` once.
 
+## Version 2.15: builds with Visual Studio again
+
+2.13 and 2.14 did not compile with MSVC: `ParseClockText` used `sscanf`, which the project's
+SDL checks make an error (C4996), and `NativeMount.inc` used `std::min`, which windows.h's
+`min` macro breaks (C2589).  The clock's text is read by hand now, and the length compared
+without `std::min`.  Nothing else changed.
+
 ## Volume files changed while the emulator runs
 
 The emulator reads each volume image into memory when it mounts it and
