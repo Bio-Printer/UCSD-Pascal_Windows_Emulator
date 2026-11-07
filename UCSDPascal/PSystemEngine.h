@@ -250,7 +250,7 @@ public:
     //    the stack -- where the normal layout puts the whole segment, so the
     //    pool lives and dies exactly as the segment's stack copy would.
     //    Segment 0's pool is at the top of D-space. LSA/LPA push the copy's
-    //    address (m_constAddr, indexed by the instruction's I-space address).
+    //    address (m_consts: the loaded segments' constants by I-space address; ConstCopy).
     //  * Assembly-language procedures cannot run (there is no Z80 code to
     //    run them anyway once memory is reclaimed).
     //  * Run-time errors: EXECERROR's PRINTLOCS reads the failing location
@@ -573,9 +573,14 @@ private:
     bool CodePlace(uint16_t len, uint16_t& newseg, uint16_t& segbot) const;  // where a segment of len bytes goes
     void CodeCommit(uint8_t seg, uint16_t segbot, uint16_t top, uint16_t dTop);
     uint16_t CodeFree(uint8_t seg);                       // returns the freed segment's pool top (0: not found)
-    // The constant pool: m_constAddr[a] is the D-space copy for the LSA/LPA
+    // The constant pool: ConstCopy(a) is the D-space copy for the LSA/LPA
     // whose length byte is at I-space address a (0: none).
-    std::vector<uint16_t> m_constAddr;
+    // (2.17: a list of the loaded segments' constants, sorted by address, highest first --
+    // a few KB, where a table indexed by every I-space address took 128 KB.)
+    struct ConstRef { uint16_t at, copy; };             // the length byte's I-space address, the copy's D-space address
+    std::vector<ConstRef> m_consts;
+    std::vector<ConstRef>::iterator ConstFirstBelow(uint16_t a);
+    uint16_t ConstCopy(uint16_t a) const;
     int m_constUnwalked = 0;                              // procedures the constant scan could not walk (test aid)
     void HarvardConstFault(uint16_t lenAt);
     uint16_t HarvardSelfPatchTarget(uint16_t a) const;    // Tiny-C /Z call sequence: the CXP operand its STO writes
@@ -594,7 +599,7 @@ private:
     void HarvardErrRestore(uint16_t mp);                  // returning through the MSCW at mp
     static bool ScanSegConsts(const uint8_t* seg, uint32_t len, std::vector<uint16_t>& key,
                               std::vector<uint16_t>& src, std::vector<uint16_t>& cnt, int& unwalked);
-    void ConstPoolInstall(uint16_t segbot, const std::vector<uint16_t>& key, const std::vector<uint16_t>& src,
+    void ConstPoolInstall(uint16_t segbot, uint16_t len, const std::vector<uint16_t>& key, const std::vector<uint16_t>& src,
                           const std::vector<uint16_t>& cnt, uint16_t dBot);
     volatile bool m_systemHalted = false;
     bool m_hostClock = false;

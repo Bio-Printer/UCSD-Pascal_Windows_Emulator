@@ -36,7 +36,7 @@
 // in I-space.
 #define PM_CONST_SCAN(p) do { ScanSegConsts((p).image, (p).len, (p).cKey, (p).cSrc, (p).cCnt, m_constUnwalked); \
                               (p).poolLen = 0; for (uint16_t n_ : (p).cCnt) (p).poolLen = (uint16_t)((p).poolLen + ((n_ + 1) & ~1)); } while (0)
-#define PM_CONST_INSTALL(p) ConstPoolInstall((p).segbot, (p).cKey, (p).cSrc, (p).cCnt, (p).dBot)
+#define PM_CONST_INSTALL(p) ConstPoolInstall((p).segbot, (p).len, (p).cKey, (p).cSrc, (p).cCnt, (p).dBot)
 // A segment read straight to where it goes (2.16; NativeSegLoad.inc): SegInPlace says
 // where, when that memory is free; NativeDiskReadTo reads it there.
 #define PM_SEG_INPLACE(p) SegInPlace((p).segbot, (p).len)
@@ -51,6 +51,7 @@
 #define PM_INTEND (m_reclaimed ? m_heapStart : (uint16_t)(PM_ROM(0x03EA) | (PM_ROM(0x03EB) << 8)))
 #include "UcsdReal.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <cmath>
@@ -1058,7 +1059,7 @@ bool PSystemEngine::NativeBoot(std::string& why, bool reclaimLayout) {
             m_code.assign(65536, 0x00);
             m_codeMem = m_code.data();
             m_codeSegs.clear();
-            m_constAddr.assign(65536, 0);
+            m_consts.clear();
             m_constUnwalked = 0;
             for (ErrShadow& e : m_errShadow) e.mscw = 0;
             m_errShadowPending = false; m_errShadowLive = false;
@@ -1172,7 +1173,7 @@ bool PSystemEngine::NativeBoot(std::string& why, bool reclaimLayout) {
         uint16_t poolLen = 0;
         for (uint16_t n : cnt) poolLen = (uint16_t)(poolLen + ((n + 1) & ~1));
         sp = (uint16_t)(memtop + 2 - poolLen);       // the stack starts below the pool
-        ConstPoolInstall(seg0bot, key, src, cnt, sp);
+        ConstPoolInstall(seg0bot, seg0len, key, src, cnt, sp);
     }
     memset(m_mem + PM_V(0x0254), 0, 60);                   // INTSEGT[1..]: cleared
     wr16(PM_V(0x0250), 1); wr16(PM_V(0x0252), memtop);           // INTSEGT[0]: the operating system
@@ -1509,8 +1510,9 @@ uint16_t PSystemEngine::CodeFree(uint8_t seg) {
     for (size_t i = m_codeSegs.size(); i-- > 0; ) {
         if (m_codeSegs[i].seg != seg) continue;
         const uint16_t dTop = m_codeSegs[i].dTop;
-        for (size_t k = i; k < m_codeSegs.size(); k++)
-            for (uint32_t a = m_codeSegs[k].bot; a < m_codeSegs[k].top; a++) m_constAddr[a] = 0;
+        // Its constants and those of the segments after it all lie below its top (the
+        // code stack grows down): the end of m_consts (2.17)
+        m_consts.resize((size_t)(ConstFirstBelow(m_codeSegs[i].top) - m_consts.begin()));
         m_codeTop = m_codeSegs[i].top;
         m_codeSegs.resize(i);
         return dTop;
@@ -1589,14 +1591,35 @@ bool PSystemEngine::ScanSegConsts(const uint8_t* seg, uint32_t len, std::vector<
 // Copy a segment's constants from its code (already in I-space at segbot) to
 // its pool, which starts at dBot in D-space, each at an even address, and
 // record where each went.
-void PSystemEngine::ConstPoolInstall(uint16_t segbot, const std::vector<uint16_t>& key, const std::vector<uint16_t>& src,
+void PSystemEngine::ConstPoolInstall(uint16_t segbot, uint16_t len, const std::vector<uint16_t>& key, const std::vector<uint16_t>& src,
                                      const std::vector<uint16_t>& cnt, uint16_t dBot) {
     uint16_t d = dBot;
+    // Every segment still loaded lies above this one (the code stack grows down): an entry
+    // below its top is left from code that is gone. (2.17)
+    m_consts.resize((size_t)(ConstFirstBelow((uint16_t)((uint32_t)segbot + len > 0xFFFFu ? 0xFFFFu : segbot + len)) - m_consts.begin()));
+    const size_t first = m_consts.size();
     for (size_t i = 0; i < key.size(); i++) {
         for (uint16_t b = 0; b < cnt[i]; b++) m_mem[(uint16_t)(d + b)] = m_codeMem[(uint16_t)(segbot + src[i] + b)];
-        m_constAddr[(uint16_t)(segbot + key[i])] = d;
+        m_consts.push_back({ (uint16_t)(segbot + key[i]), d });
         d = (uint16_t)(d + ((cnt[i] + 1) & ~1));
     }
+    // m_consts stays sorted by address, highest first: only this segment's entries need sorting
+    std::sort(m_consts.begin() + (ptrdiff_t)first, m_consts.end(),
+              [](const ConstRef& a, const ConstRef& b) { return a.at > b.at; });
+}
+
+// The constant pool's entries (2.17): the first whose address is below a
+// (m_consts is sorted highest first), and the D-space copy of the LSA/LPA
+// constant whose length byte is at I-space address a (0: none).
+std::vector<PSystemEngine::ConstRef>::iterator PSystemEngine::ConstFirstBelow(uint16_t a) {
+    return std::lower_bound(m_consts.begin(), m_consts.end(), a,
+                            [](const ConstRef& c, uint16_t x) { return c.at >= x; });
+}
+
+uint16_t PSystemEngine::ConstCopy(uint16_t a) const {
+    auto it = std::lower_bound(m_consts.begin(), m_consts.end(), a,
+                               [](const ConstRef& c, uint16_t x) { return c.at > x; });
+    return (it != m_consts.end() && it->at == a) ? it->copy : 0;
 }
 
 bool PSystemEngine::NativeDiskRead(uint16_t unit, uint16_t block, uint16_t len, std::vector<uint8_t>& out) {
@@ -2659,7 +2682,7 @@ void PSystemEngine::RunLoop() {
             memcpy(m_mem, before.data(), 65536);
             m_cpu.r.PC = 0xF000; m_cpu.r.SP = sp0;
             m_rom.clear(); m_reclaimed = false; m_cxp02 = 0x03D7;
-            m_harvard = false; m_codeMem = m_mem; m_code.clear(); m_codeSegs.clear(); m_codeTop = 0; m_constAddr.clear();
+            m_harvard = false; m_codeMem = m_mem; m_code.clear(); m_codeSegs.clear(); m_codeTop = 0; m_consts.clear();
             for (ErrShadow& e : m_errShadow) e.mscw = 0;
             m_errShadowPending = false; m_errShadowLive = false;
             m_varDelta = 0; m_builtInTables = false; m_ioReady = false; m_heapStart = 0x03A4;
@@ -4325,7 +4348,7 @@ void PSystemEngine::RunLoop() {
                     if (patchAt != 0) {
                         m_codeStoreAt = patchAt;   // the STO of this sequence writes the CXP's operands (I-space)
                     } else {
-                        dataAddr = m_constAddr[lenAt];
+                        dataAddr = ConstCopy(lenAt);
                         if (dataAddr == 0) { HarvardConstFault(lenAt); break; }
                     }
                 }
@@ -4355,7 +4378,7 @@ void PSystemEngine::RunLoop() {
                 if (m_preserveZ80RegisterCompat) m_cpu.r.A = (uint8_t)(bAfterInc + (carry ? 1 : 0)); // ADC A,B
                 uint16_t strAddr = ipc;
                 if (m_harvard) {        // Harvard: its copy in the segment's constant pool (D-space)
-                    strAddr = m_constAddr[ipc];
+                    strAddr = ConstCopy(ipc);
                     if (strAddr == 0) { HarvardConstFault(ipc); break; }
                 }
                 PushStackWord(strAddr);

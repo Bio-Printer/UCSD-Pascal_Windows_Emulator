@@ -383,6 +383,19 @@ removes a heap block as big as the largest segment (vi's is 36.5 KB).  The host 
 `PM_SEG_INPLACE` / `PM_SEG_READ` (`SegInPlace`, `NativeDiskReadTo`); `linux-harness/`, which
 does not, keeps the buffer.
 
+## Version 2.17: Harvard mode in 64 KB less 128 KB
+
+Harvard mode found the D-space copy of an LSA/LPA constant through a table indexed by every
+I-space address: 64K entries of 2 bytes, 128 KB, next to the 64 KB of I-space itself.  Only
+the constants of the segments on the code stack are ever in it -- a few hundred to a few
+thousand.  They are now a list of (I-space address, D-space copy) pairs sorted by address
+(`m_consts`, `ConstCopy`: a binary search per LSA/LPA).  The code stack grows down, so a new
+segment's constants go at the list's end, and freeing a segment (with those loaded after it)
+cuts the list's end; an entry below a new segment's top is left from code that is gone and is
+dropped when it is installed.  Harvard mode now needs I-space (64 KB) and a few KB, so it
+fits the RP2040 port, together with 2.16 (no segment-sized buffer).  Nothing a program sees
+changes.
+
 ## Volume files changed while the emulator runs
 
 The emulator reads each volume image into memory when it mounts it and
