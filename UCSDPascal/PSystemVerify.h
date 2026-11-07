@@ -11,6 +11,9 @@
 //                             (the break key: the program must be running)
 //   QUIET ms                  the console output must not grow for ms (after 200 ms for what was
 //                             on its way): ^S stopped it
+//   CLOCK "YYYY-MM-DDTHH:MM:SS"  (2.13) the PC's clock stands at that time from here on
+//                             (set while the system waits for a key, as a TYPE; it
+//                             needs the host clock: run_verify's VERIFY_HOSTCLOCK)
 //   HALTED                    the P-System must halt here (it reaches ABORT:
 //                             its main program ended) -- the end of a script
 //   Escapes inside "...":  \r  carriage return    \e  ESC    \\  \"
@@ -80,7 +83,7 @@ inline bool PrepareVerifyDisks(const std::filesystem::path& bootDisk, const std:
 }
 
 struct VerifyStep {
-    enum Kind { WAIT, TYPE, HALTED, QUIET } kind;
+    enum Kind { WAIT, TYPE, HALTED, QUIET, CLOCK } kind;
     std::string text;
     int line;
     bool now = false;       // TYPENOW
@@ -113,7 +116,8 @@ inline bool ParseVerifyScript(const std::string& src, std::vector<VerifyStep>& o
         else if (word == "TYPE") st.kind = VerifyStep::TYPE;
         else if (word == "TYPENOW") { st.kind = VerifyStep::TYPE; st.now = true; }
         else if (word == "QUIET") st.kind = VerifyStep::QUIET;
-        else { err = "line " + std::to_string(lineNo) + ": expected WAIT, TYPE or HALTED, found '" + word + "'"; return false; }
+        else if (word == "CLOCK") st.kind = VerifyStep::CLOCK;
+        else { err = "line " + std::to_string(lineNo) + ": expected WAIT, TYPE, CLOCK or HALTED, found '" + word + "'"; return false; }
         while (i < line.size() && (line[i] == ' ' || line[i] == '\t')) i++;
         if (i >= line.size() || line[i] != '"') { err = "line " + std::to_string(lineNo) + ": missing opening quote"; return false; }
         i++;
@@ -140,6 +144,10 @@ inline bool ParseVerifyScript(const std::string& src, std::vector<VerifyStep>& o
         }
         if (!closed) { err = "line " + std::to_string(lineNo) + ": missing closing quote"; return false; }
         if (text.empty()) { err = "line " + std::to_string(lineNo) + ": empty text"; return false; }
+        long long ct;
+        if (st.kind == VerifyStep::CLOCK && !PSystemEngine::ParseClockText(text, ct)) {
+            err = "line " + std::to_string(lineNo) + ": CLOCK wants \"YYYY-MM-DDTHH:MM:SS\""; return false;
+        }
         st.text = text;
         out.push_back(st);
     }
@@ -183,6 +191,13 @@ public:
                 m_quietOn = false; m_step++; continue;
             }
             if (!idle && !s.now) return RUNNING;
+            if (s.kind == VerifyStep::CLOCK) {          // the clock set while the system waits for a key
+                long long t = 0;
+                PSystemEngine::ParseClockText(s.text, t);
+                m_e.SetHostClockTime(t);
+                m_step++;
+                continue;
+            }
             // VERIFY_BURST=1: the rest of this TYPE at once, as a person typing faster than the
             // program reads (type-ahead; not deterministic: the program sees the keys queued)
             do {
@@ -205,7 +220,7 @@ public:
         if (m_step >= m_steps.size()) return "done";
         const VerifyStep& s = m_steps[m_step];
         if (s.kind == VerifyStep::HALTED) return "HALTED (script line " + std::to_string(s.line) + ")";
-        return std::string(s.kind == VerifyStep::WAIT ? "WAIT \"" : "TYPE \"") + Printable(s.text) + "\" (script line " + std::to_string(s.line) + ")";
+        return std::string(s.kind == VerifyStep::WAIT ? "WAIT \"" : s.kind == VerifyStep::CLOCK ? "CLOCK \"" : "TYPE \"") + Printable(s.text) + "\" (script line " + std::to_string(s.line) + ")";
     }
 
     static std::string Printable(const std::string& t) {

@@ -759,8 +759,12 @@ static int UnitToDriveIndex(int unit) {
 //                       5=data,6=graf,7=foto)
 //   [6]    length of filename (max 15)
 //   [7-21] filename characters (15 bytes, zero-padded)
-//   [22-23] DLASTBYTE (bytes used in the last block; 512 = last block full)
+//   [22-23] DLASTBYTE (bytes used in the last block; 512 = last block full):
+//           bits 0-9 (bits 10-15: the time's high 6 bits, 2.13)
 //   [24-25] DACCESS   (date word)
+// The time of day (2.13): seconds since midnight + 1 (0: none), its low 11
+// bits in [4-5]'s bits 4-14 and its high 6 in [22-23]'s bits 10-15; the
+// operating system writes it when it closes a file it wrote.
 
 static const int UCSD_DIR_BYTE_OFFSET = 1024; // block 2 × 512
 static const int UCSD_ENTRY_SIZE      = 26;
@@ -1170,17 +1174,110 @@ const PmIoConfig& PSystemEngine::IoConfig() {
 }
 
 // ---- The PC's date and time (SetHostClock) ----
-void PSystemEngine::HostClockStart() {
-    const auto sysNow = std::chrono::system_clock::now();
-    const std::time_t tt = std::chrono::system_clock::to_time_t(sysNow);
+// Times are kept as naive local seconds: since 1970-01-01 00:00 on the PC's
+// wall clock, with no time zone (days_from_civil, H. Hinnant).
+static long long DaysFromCivil(long long y, unsigned m, unsigned d) {
+    y -= m <= 2;
+    const long long era = (y >= 0 ? y : y - 399) / 400;
+    const unsigned yoe = (unsigned)(y - era * 400);
+    const unsigned doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1;
+    const unsigned doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    return era * 146097 + (long long)doe - 719468;
+}
+static void CivilFromDays(long long z, int& y, unsigned& m, unsigned& d) {
+    z += 719468;
+    const long long era = (z >= 0 ? z : z - 146096) / 146097;
+    const unsigned doe = (unsigned)(z - era * 146097);
+    const unsigned yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    const unsigned doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    const unsigned mp = (5 * doy + 2) / 153;
+    d = doy - (153 * mp + 2) / 5 + 1;
+    m = mp < 10 ? mp + 3 : mp - 9;
+    y = (int)(yoe + era * 400 + (m <= 2));
+}
+static long long NaiveFromTm(const std::tm& t) {
+    return DaysFromCivil(t.tm_year + 1900, (unsigned)t.tm_mon + 1, (unsigned)t.tm_mday) * 86400LL
+         + t.tm_hour * 3600 + t.tm_min * 60 + t.tm_sec;
+}
+// the UCSD DATEREC of a naive time: MONTH bits 0-3, DAY 4-8, YEAR (two digits) 9-15
+static uint16_t DateRecOf(long long t) {
+    int y; unsigned m, d;
+    CivilFromDays(t >= 0 ? t / 86400 : (t - 86399) / 86400, y, m, d);
+    return (uint16_t)(((y % 100) << 9) | (d << 4) | m);
+}
+// a DATEREC and a time stamp (seconds since midnight + 1, 0: none) as naive local seconds; -1: no date
+static long long NaiveOfEntry(uint16_t date, long stamp) {
+    const unsigned m = date & 15, d = (date >> 4) & 31, yy = date >> 9;
+    if (m < 1 || m > 12 || d < 1 || yy >= 100) return -1;
+    return DaysFromCivil(PSystemEngine::FullYear((int)yy), m, d) * 86400LL + (stamp > 0 ? stamp - 1 : 0);
+}
+
+// a PC file's modification time as naive local seconds (false: none)
+static bool FileNaiveTime(const std::wstring& path, long long& t) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const fs::file_time_type ft = fs::last_write_time(fs::path(path), ec);
+    if (ec) return false;
+    const auto sys = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+        ft - fs::file_time_type::clock::now() + std::chrono::system_clock::now());
+    const std::time_t tt = std::chrono::system_clock::to_time_t(sys);
     std::tm lt{};
 #ifdef _WIN32
     localtime_s(&lt, &tt);
 #else
     localtime_r(&tt, &lt);
 #endif
-    const long long ms = std::chrono::duration_cast<std::chrono::milliseconds>(sysNow.time_since_epoch()).count() % 1000;
-    m_clockTicks0 = (uint32_t)((lt.tm_hour * 3600 + lt.tm_min * 60 + lt.tm_sec) * 60 + ms * 60 / 1000);
+    t = NaiveFromTm(lt);
+    return true;
+}
+// a PC file's modification time := naive local seconds t
+static void SetFileNaiveTime(const std::wstring& path, long long t) {
+    namespace fs = std::filesystem;
+    int y; unsigned m, d;
+    const long long days = t >= 0 ? t / 86400 : (t - 86399) / 86400, secs = t - days * 86400;
+    CivilFromDays(days, y, m, d);
+    std::tm lt{};
+    lt.tm_year = y - 1900; lt.tm_mon = (int)m - 1; lt.tm_mday = (int)d;
+    lt.tm_hour = (int)(secs / 3600); lt.tm_min = (int)(secs / 60 % 60); lt.tm_sec = (int)(secs % 60);
+    lt.tm_isdst = -1;
+    const std::time_t tt = mktime(&lt);
+    if (tt == (std::time_t)-1) return;
+    const auto ft = fs::file_time_type::clock::now() +
+        std::chrono::duration_cast<fs::file_time_type::duration>(std::chrono::system_clock::from_time_t(tt) - std::chrono::system_clock::now());
+    std::error_code ec;
+    fs::last_write_time(fs::path(path), ft, ec);
+}
+
+bool PSystemEngine::ParseClockText(const std::string& s, long long& t) {
+    int y, mo, d, h, mi, se;
+    char sep;
+    if (sscanf(s.c_str(), "%d-%d-%d%c%d:%d:%d", &y, &mo, &d, &sep, &h, &mi, &se) != 7 || (sep != 'T' && sep != ' '))
+        return false;
+    if (mo < 1 || mo > 12 || d < 1 || d > 31 || h < 0 || h > 23 || mi < 0 || mi > 59 || se < 0 || se > 59) return false;
+    t = DaysFromCivil(y, (unsigned)mo, (unsigned)d) * 86400LL + h * 3600 + mi * 60 + se;
+    return true;
+}
+
+long long PSystemEngine::ClockNow() const {
+    if (m_clockFixed) return m_clockFixedT;
+    const std::time_t tt = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    std::tm lt{};
+#ifdef _WIN32
+    localtime_s(&lt, &tt);
+#else
+    localtime_r(&tt, &lt);
+#endif
+    return NaiveFromTm(lt);
+}
+
+void PSystemEngine::HostClockStart() {
+    const long long now = ClockNow();
+    const long long secs = ((now % 86400) + 86400) % 86400;
+    m_clockMidnight = now - secs;
+    long long ms = 0;
+    if (!m_clockFixed)
+        ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() % 1000;
+    m_clockTicks0 = (uint32_t)(secs * 60 + ms * 60 / 1000);
     m_clockT0 = std::chrono::steady_clock::now();
     // today's date into the boot volume's DLASTBOOT (directory entry 0, byte 20):
     // PACKED RECORD MONTH: 0..12 (bits 0-3); DAY: 0..31 (4-8); YEAR: 0..100 (9-15)
@@ -1189,7 +1286,7 @@ void PSystemEngine::HostClockStart() {
         uint8_t* d = disk->data() + 1024;
         const uint16_t kind = (uint16_t)(d[4] | (d[5] << 8)), nameLen = d[6];
         if ((kind & 15) == 0 && nameLen >= 1 && nameLen <= 7) {        // a volume header
-            const uint16_t date = (uint16_t)(((lt.tm_year % 100) << 9) | (lt.tm_mday << 4) | (lt.tm_mon + 1));
+            const uint16_t date = DateRecOf(now);
             d[20] = (uint8_t)date; d[21] = (uint8_t)(date >> 8);
         }
     }
@@ -1197,10 +1294,36 @@ void PSystemEngine::HostClockStart() {
 
 void PSystemEngine::NativeClockUpdate() {
     if (!m_hostClock) return;
-    const long long ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - m_clockT0).count();
-    const uint32_t t = m_clockTicks0 + (uint32_t)(ms * 60 / 1000);
+    uint32_t t;
+    if (m_clockFixed)                                  // the fixed clock: ticks since the boot day's midnight
+        t = (uint32_t)((m_clockFixedT - m_clockMidnight) * 60);
+    else {
+        const long long ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - m_clockT0).count();
+        t = m_clockTicks0 + (uint32_t)(ms * 60 / 1000);
+    }
     m_mem[PM_V(0x031A)] = (uint8_t)t;         m_mem[(uint16_t)(PM_V(0x031A) + 1)] = (uint8_t)(t >> 8);    // LOWTIME
     m_mem[PM_V(0x031C)] = (uint8_t)(t >> 16); m_mem[(uint16_t)(PM_V(0x031C) + 1)] = (uint8_t)(t >> 24);   // HIGHTIME
+}
+
+// TIME's answers for the operating system (2.13; SetHostClock): both variables 25611 -- a
+// file's time stamp in its two parts; both 25612 -- today's DATEREC.  false: an ordinary TIME.
+bool PSystemEngine::TimeAnswer(uint16_t hiAddr, uint16_t loAddr) {
+    const uint16_t hv = (uint16_t)(PM_MEM[hiAddr] | (PM_MEM[(uint16_t)(hiAddr + 1)] << 8));
+    const uint16_t lv = (uint16_t)(PM_MEM[loAddr] | (PM_MEM[(uint16_t)(loAddr + 1)] << 8));
+    if (hv != lv || (hv != 25611 && hv != 25612)) return false;
+    uint16_t a = 0, b = 0;
+    if (m_hostClock) {
+        const long long now = ClockNow();
+        if (hv == 25611) {
+            const long s = (long)(((now % 86400) + 86400) % 86400) + 1;
+            a = (uint16_t)(s & 0x7FF);
+            b = (uint16_t)(s >> 11);
+        } else
+            a = DateRecOf(now);
+    }
+    PM_MEM[hiAddr] = (uint8_t)a; PM_MEM[(uint16_t)(hiAddr + 1)] = (uint8_t)(a >> 8);
+    PM_MEM[loAddr] = (uint8_t)b; PM_MEM[(uint16_t)(loAddr + 1)] = (uint8_t)(b >> 8);
+    return true;
 }
 
 // Tiny-C's older call through a function pointer (its -z / /Z option, kept
@@ -1568,8 +1691,10 @@ std::vector<PSystemEngine::UcsdDirEntry> PSystemEngine::GetVolumeDirectory(int u
         if (nlen < 0 || nlen > 15) continue; // corrupt entry
         for (int j = 0; j < nlen; j++)
             e.name += (wchar_t)(*img)[off + 7 + j];
-        e.lastByte = rd16(off + 22);
+        e.lastByte = rd16(off + 22) & 0x3FF;            // (bits 10-15: the time's high part, 2.13)
         if (e.lastByte == 0 || e.lastByte > 512) e.lastByte = 512;
+        e.date = rd16(off + 24);
+        e.stamp = ((rd16(off + 4) >> 4) & 0x7FF) | ((long)(rd16(off + 22) >> 10) << 11);
         e.subVolume = (e.kind == 5 || e.kind == 0)
             && ValidDirectoryAt(*img, (long)base + e.firstBlock, e.lastBlock - e.firstBlock);
         if (!e.name.empty() && e.lastBlock > e.firstBlock)
@@ -1680,6 +1805,9 @@ std::wstring PSystemEngine::ExportFileFromVolume(int unit, const std::wstring& u
         ::DeleteFileW(windowsDestPath.c_str()); // remove partial output
         return L"Write error while exporting to:\r\n" + windowsDestPath;
     }
+    // the file's date and time (2.13: the time when the entry has one) on the Windows file
+    const long long t = NaiveOfEntry(found->date, found->stamp);
+    if (t >= 0) SetFileNaiveTime(windowsDestPath, t);
     return L""; // success
 }
 
@@ -1896,8 +2024,18 @@ std::wstring PSystemEngine::ImportFileToVolume(int unit, const std::wstring& win
     uint16_t lastByte = (rawSize == 0) ? (uint16_t)0
                        : (rawSize % 512 == 0) ? (uint16_t)512
                        : (uint16_t)(rawSize % 512);
+    // the Windows file's date and time (2.13): DACCESS, and the time of day in
+    // DFKIND's bits 4-14 and DLASTBYTE's bits 10-15 (seconds since midnight + 1)
+    long long mt;
+    if (FileNaiveTime(windowsFilePath, mt)) {
+        const uint16_t date = DateRecOf(mt);
+        const long st = (long)(((mt % 86400) + 86400) % 86400) + 1;
+        const uint16_t w2 = (uint16_t)(fileKind | ((st & 0x7FF) << 4));
+        ne.b[4] = (uint8_t)w2;             ne.b[5] = (uint8_t)(w2 >> 8);
+        ne.b[24] = (uint8_t)date;          ne.b[25] = (uint8_t)(date >> 8);
+        lastByte = (uint16_t)(lastByte | ((st >> 11) << 10));
+    }
     ne.b[22] = (uint8_t)(lastByte & 0xFF);   ne.b[23] = (uint8_t)(lastByte >> 8);
-    // (date = 0: no clock on this system)
     ents.insert(ents.begin() + at, ne);
 
     // ---- The directory written back: the entries, DNUMFILES ----
@@ -2874,7 +3012,12 @@ void PSystemEngine::RunLoop() {
             const uint16_t cpTo = (uint16_t)(m_mem[cpEntry] | (m_mem[(uint16_t)(cpEntry + 1)] << 8));
             const bool cpNotImp = cpTo == 0 ||                          // empty, or NOFPT's "JP NOTIMP"
                 (m_mem[cpTo] == 0xC3 && m_mem[(uint16_t)(cpTo + 1)] == 0x12 && m_mem[(uint16_t)(cpTo + 2)] == 0x04);
-            if ((cpNum >= 100 && cpNum <= 139) || (cpNum >= 25 && cpNum <= 31 && cpNotImp)) {
+            // TIME with both variables 25611 or 25612 (2.13): the OS asks for a file's time or today's date
+            const bool cpTime = cpNum == 9 && PeekStackWord(0) != PeekStackWord(2) &&
+                [&]() { const uint16_t h = PeekStackWord(2), l = PeekStackWord(0);
+                        const uint16_t hv = (uint16_t)(m_mem[h] | (m_mem[(uint16_t)(h + 1)] << 8)), lv = (uint16_t)(m_mem[l] | (m_mem[(uint16_t)(l + 1)] << 8));
+                        return hv == lv && (hv == 25611 || hv == 25612); }();
+            if ((cpNum >= 100 && cpNum <= 139) || (cpNum >= 25 && cpNum <= 31 && cpNotImp) || cpTime) {
                 nativeOpcodeLookup = OP_CSP;                              // the coprocessor
                 m_z80CoprocCount++;
             }
@@ -3622,6 +3765,17 @@ void PSystemEngine::RunLoop() {
 #include "NativeCalli.inc"
                 // CSP 139: a disk image's size (NativeUnitSize.inc)
 #include "NativeUnitSize.inc"
+                // CSP 9 TIME with both variables 25611 / 25612 (2.13): a file's time stamp,
+                // today's date (TimeAnswer) -- P-Code mode, and Z80 mode by the coprocessor
+                if (procNum == 9 && TimeAnswer(PeekStackWord(2), PeekStackWord(0))) {
+                    PopStackWord(); PopStackWord();
+                    m_cpu.r.setBC((uint16_t)(m_cpu.r.BC() + 1));
+                    m_mem[PM_V(0x0246)] = m_cpu.r.BC() & 0xFF;
+                    m_mem[PM_V(0x0247)] = m_cpu.r.BC() >> 8;
+                    m_cpu.r.PC = 0x03A4;                        // BACK1, as CSP 139
+                    m_opcodeEmulatedCount[OP_CSP]++;
+                    break;
+                }
                 // 8-byte floating point (double): CSP 100..137 (NativeDouble.inc)
 #include "NativeDouble.inc"
                 if (procNum >= 25 && procNum <= 31) {

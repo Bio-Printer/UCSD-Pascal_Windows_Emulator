@@ -112,6 +112,10 @@ int main(int argc, char** argv) {
     if (getenv("VERIFY_STOP_AT")) e.SetVerifyStopAt(strtoull(getenv("VERIFY_STOP_AT"), nullptr, 10));
     if (getenv("VERIFY_RECLAIM")) e.SetReclaimInterpreterMemory(true);
     if (getenv("VERIFY_HOSTCLOCK")) e.SetHostClock(true);    // the PC's date and time, as the GUI (not deterministic: off by default)
+    {   // VERIFY_HOSTCLOCK=YYYY-MM-DDTHH:MM:SS (2.13): a fixed clock from there (deterministic; a script's CLOCK moves it)
+        long long t;
+        if (getenv("VERIFY_HOSTCLOCK") && PSystemEngine::ParseClockText(getenv("VERIFY_HOSTCLOCK"), t)) e.SetHostClockTime(t);
+    }
     const char* hv = getenv("VERIFY_HARVARD");          // with VERIFY_RECLAIM, native mode: code in its own I-space
     const bool harvard = hv && *hv && strcmp(hv, "0") != 0;   // (unset, empty or 0: off)
     if (harvard) e.SetHarvard(true);

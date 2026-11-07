@@ -314,6 +314,32 @@ files and folders and lists any that failed.  A name Windows refuses (`\ / : * ?
 last dot) gets `_` there (`PSystemEngine::WindowsNameFor`); `ExportTreeFromVolume` does the
 work, and run_verify's `VERIFY_EXPORT_TREE=unit[/A/B]:dir` runs it.
 
+## Files' times of day; the clock for tests (version 2.13)
+
+With **Options > PC date and time** on (the default), the P-System can now give each file the
+time of day it was written, to the second, as well as its date.  A UCSD directory entry has no
+field for it, but two have room: DFKIND's word uses only its low 4 bits (bits 4-14 are the
+OS's FILLER2, bit 15 the Filer's STATUS) and DLASTBYTE's only its low 10 (1..512).  The time --
+seconds since midnight + 1, 1..86400; 0 means none -- has its low 11 bits in DFKIND's bits 4-14
+and its high 6 in DLASTBYTE's bits 10-15.  The operating system writes it when it closes a file
+it wrote (UCSD-SYSTEM-C's SYSTEM.C and SYSTEM.PASCAL, OS source revision 1.16), and asks the
+emulator for it through TIME, which a Pascal program can call:
+
+    HI := 25611; LO := 25611; TIME(HI, LO);   HI: the time's low 11 bits, LO: its high 6 bits
+    HI := 25612; LO := 25612; TIME(HI, LO);   HI: today's date (a DATEREC), LO: 0
+
+(both 0 when the clock is off).  Every other TIME call is answered as before.  A two-digit
+year is 2000-2069 for 00-69 and 1970-1999 for 70-99 (`PSystemEngine::FullYear`).
+
+Import gives a file the Windows file's date and time; Export gives the Windows file the
+entry's (`GetVolumeDirectory` returns them, `UcsdDirEntry::date` and `stamp`, and masks
+DLASTBYTE to its 10 bits).
+
+For tests the clock can stand still: run_verify's `VERIFY_HOSTCLOCK=2026-11-07T12:00:00` (any
+other value: the PC's clock, as before) starts the P-System at that time, and a script step
+`CLOCK "2026-11-07T12:05:30"` moves it, as a TYPE does while the system waits for a key -- so
+runs stay deterministic and a test can say how much time passed.
+
 ## Volume files changed while the emulator runs
 
 The emulator reads each volume image into memory when it mounts it and

@@ -295,7 +295,23 @@ public:
     //    that directory block, as after a Filer D(ate).
     // Off (the default, and always for Verify runs): TIME returns 0 and the
     // date is the disk's -- runs stay deterministic.
+    //  * (version 2.13) a file's date and time for the operating system: TIME
+    //    called with both variables holding 25611 (PX_TIME_STAMP) answers
+    //    hi = the low 11 bits and lo = the high 6 bits of the time of day as
+    //    seconds since midnight + 1 (1..86400; 0, 0 when the clock is off) --
+    //    a directory entry's time: word 2 bits 4..14 and word 11 (DLASTBYTE's)
+    //    bits 10..15, written by the OS when it closes a file; both holding
+    //    25612 (PX_TIME_DATE) answers hi = today's DATEREC (0 when off), lo = 0.
+    //    Ordinary TIME calls are unchanged.
     void SetHostClock(bool on) { m_hostClock = on; }
+    // A fixed clock (tests: run_verify's VERIFY_HOSTCLOCK=YYYY-MM-DDTHH:MM:SS
+    // and a script's CLOCK step): the time is t, naive local seconds since
+    // 1970-01-01 00:00 (no time zone), until set again; TIME's ticks follow it.
+    void SetHostClockTime(long long t) { m_clockFixed = true; m_clockFixedT = t; }
+    // "YYYY-MM-DDTHH:MM:SS" (or a blank for the T) as naive local seconds
+    static bool ParseClockText(const std::string& s, long long& t);
+    // The two-digit UCSD year: 00-69 the 2000s, 70-99 the 1900s
+    static int FullYear(int yy) { return yy < 70 ? 2000 + yy : 1900 + yy; }
 
     // Native boot (P-Code mode): at the start of RunLoop, instead of running
     // the Z80 loader (pascal.bin) and the interpreter's BOOT code, the engine
@@ -435,6 +451,8 @@ public:
         uint16_t     lastBlock;  // exclusive (first block past end of file)
         uint16_t     lastByte;   // bytes used in last block (1-512; 512 = last block full)
         bool         subVolume = false;  // a data file that holds a directory (see SubVolume)
+        uint16_t     date = 0;   // DACCESS (0: none)
+        long         stamp = 0;  // the time of day: seconds since midnight + 1 (0: none; 2.13)
 
         // Total byte count of the file's content.
         long ByteCount() const {
@@ -578,6 +596,11 @@ private:
     bool m_hostClock = false;
     uint32_t m_clockTicks0 = 0;                    // HIGHTIME:LOWTIME when the P-System started
     std::chrono::steady_clock::time_point m_clockT0;
+    bool m_clockFixed = false;                     // SetHostClockTime: the clock stands at m_clockFixedT
+    long long m_clockFixedT = 0;
+    long long m_clockMidnight = 0;                 // the boot day's 00:00 (naive local seconds)
+    long long ClockNow() const;                    // now, naive local seconds (the PC's, or the fixed clock)
+    bool TimeAnswer(uint16_t hiAddr, uint16_t loAddr);   // TIME's 25611 / 25612 answers (2.13)
     uint16_t m_timAddr = 0;                        // the Z80 TIM routine (CSP table entry 9)
     void NativeClockUpdate();                      // HIGHTIME/LOWTIME := the host clock (if on)
     void HostClockStart();                         // the start value and today's date on the boot volume
