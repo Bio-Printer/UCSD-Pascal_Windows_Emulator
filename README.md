@@ -340,6 +340,26 @@ other value: the PC's clock, as before) starts the P-System at that time, and a 
 `CLOCK "2026-11-07T12:05:30"` moves it, as a TYPE does while the system waits for a key -- so
 runs stay deterministic and a test can say how much time passed.
 
+## A program changes a unit's disk (version 2.14)
+
+A program can now give a disk unit another image, as File > Open Unit does, so that a makefile
+can bring each volume it needs on line in turn (UCSD-TinyC's MOUNT and its master makefile,
+MASTER:, which rebuilds Tiny-C, BC, B2 and the original programs from all their source disks).
+Two new standard procedures (`NativeMount.inc`; in Z80 mode the coprocessor runs them):
+
+    CSP 140 MOUNT      unit, address of a NUL-terminated name -> result
+    CSP 141 IMAGENAME  unit, address of a buffer, its size     -> length
+
+MOUNT looks for NAME (or NAME.BLK) in the folder of the image on that unit now, else the boot
+disk's -- a name only: letters, digits, `.`, `_`, `-` -- and loads it there
+(`PSystemEngine::MountByName`); `""` takes the unit's image off.  Units 5 and 9-14 (never 4,
+the boot disk).  Result: the new image's blocks, or -1 no such image, -2 a unit that cannot be
+changed, -3 a bad name.  The old image's file already has everything written to it (every
+write goes through at once).  The UI takes the new image as the unit's (File menu, and the
+next launch).  IMAGENAME gives the image file's name on a unit (no folder), -1 with none.
+The operating system notices the new volume when a file on it is next looked for (FETCHDIR:
+a directory whose volume name differs from the unit's), so MOUNT opens `#n:` once.
+
 ## Volume files changed while the emulator runs
 
 The emulator reads each volume image into memory when it mounts it and

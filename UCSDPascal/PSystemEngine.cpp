@@ -721,6 +721,60 @@ int PSystemEngine::UnitImageSize(uint8_t unit, int blocks) {
     return blocks;
 }
 
+// CSP 140 (2.14): unit gets the image NAME (NAME.BLK) from the folder of the image on it now,
+// else the boot disk's; "" takes the image off.  The image's blocks; -1 no such image, -2 a
+// unit that cannot be changed, -3 a bad name.
+int PSystemEngine::MountByName(uint8_t unit, const std::string& name) {
+    const int drive = UnitValueToDrive(unit);
+    if (drive < 1 || drive >= kDrives) return -2;      // (drive 0: the boot disk)
+    if (name.empty()) {
+        UnmountUnit(unit);
+        m_mountedPending.store(unit);
+        return 0;
+    }
+    if (name.size() > 64 || name[0] == '.') return -3;
+    for (char c : name)
+        if (!isalnum((unsigned char)c) && c != '.' && c != '_' && c != '-') return -3;
+    std::filesystem::path dir;
+    if (auto* p = DrivePath(drive); p && !p->empty()) dir = std::filesystem::path(*p).parent_path();
+    else if (!m_volDrivePath[0].empty()) dir = std::filesystem::path(m_volDrivePath[0]).parent_path();
+    std::wstring wname(name.begin(), name.end());
+    std::error_code ec;
+    std::filesystem::path full = dir / wname;
+    std::string up = name;
+    for (char& c : up) c = (char)toupper((unsigned char)c);
+    if (up.size() < 4 || up.compare(up.size() - 4, 4, ".BLK") != 0 || !std::filesystem::is_regular_file(full, ec))
+        full = dir / (wname + L".BLK");
+    if (!std::filesystem::is_regular_file(full, ec)) return -1;
+    std::vector<uint8_t> img;
+    if (!LoadWholeFile(full.wstring(), img) || img.size() < 6 * 512) return -1;
+    m_volDrive[drive].swap(img);
+    m_volDrivePath[drive] = full.wstring();
+    StampDrive(drive);
+    m_mountedPending.store(unit);
+    return (int)(m_volDrive[drive].size() / 512);
+}
+
+// CSP 141 (2.14): the image file's name on unit, without its folder ("" none)
+std::string PSystemEngine::ImageFileName(uint8_t unit) {
+    const int drive = UnitValueToDrive(unit);
+    auto* p = DrivePath(drive);
+    if (!p || p->empty() || DriveImage(drive)->empty()) return std::string();
+    const std::wstring w = std::filesystem::path(*p).filename().wstring();
+    std::string out;
+    for (wchar_t c : w) out += (c >= 32 && c < 127) ? (char)c : '_';
+    return out;
+}
+
+int PSystemEngine::TakeMountedUnit(std::wstring& pathOut) {
+    const int unit = m_mountedPending.exchange(0);
+    if (unit) {
+        auto* p = DrivePath(UnitValueToDrive((uint8_t)unit));
+        pathOut = p ? *p : std::wstring();
+    }
+    return unit;
+}
+
 // ---------------------------------------------------------------------------
 // UCSD Pascal volume directory helpers
 // ---------------------------------------------------------------------------
@@ -2998,7 +3052,7 @@ void PSystemEngine::RunLoop() {
         int nativeOpcodeLookup = m_nativePcodeOps ? NativeOpcodeForTarget(m_cpu.r.PC) : -1;
         // Z80 mode's coprocessor (SetZ80Coprocessor): the Z80 interpreter's CSP
         // routine (0x15B8: LD A,(BC); INC BC) indexes its 41-entry CSPTBL with no
-        // range check, so CSP 100..139 -- the 8-byte doubles, CALLI and UNITSIZE -- would jump
+        // range check, so CSP 100..141 -- the 8-byte doubles, CALLI, UNITSIZE, MOUNT and IMAGENAME -- would jump
         // through whatever follows the table; and this build leaves SIN, COS, LOG,
         // ATAN, LN, EXP, SQT (CSP 25..31) unimplemented (NOFPT: JP NOTIMP).
         // Exactly those go to the native CSP code below (25..31 only while the
@@ -3017,7 +3071,7 @@ void PSystemEngine::RunLoop() {
                 [&]() { const uint16_t h = PeekStackWord(2), l = PeekStackWord(0);
                         const uint16_t hv = (uint16_t)(m_mem[h] | (m_mem[(uint16_t)(h + 1)] << 8)), lv = (uint16_t)(m_mem[l] | (m_mem[(uint16_t)(l + 1)] << 8));
                         return hv == lv && (hv == 25611 || hv == 25612); }();
-            if ((cpNum >= 100 && cpNum <= 139) || (cpNum >= 25 && cpNum <= 31 && cpNotImp) || cpTime) {
+            if ((cpNum >= 100 && cpNum <= 141) || (cpNum >= 25 && cpNum <= 31 && cpNotImp) || cpTime) {
                 nativeOpcodeLookup = OP_CSP;                              // the coprocessor
                 m_z80CoprocCount++;
             }
@@ -3765,6 +3819,8 @@ void PSystemEngine::RunLoop() {
 #include "NativeCalli.inc"
                 // CSP 139: a disk image's size (NativeUnitSize.inc)
 #include "NativeUnitSize.inc"
+                // CSP 140 MOUNT, 141 IMAGENAME: a unit's disk image by name (NativeMount.inc)
+#include "NativeMount.inc"
                 // CSP 9 TIME with both variables 25611 / 25612 (2.13): a file's time stamp,
                 // today's date (TimeAnswer) -- P-Code mode, and Z80 mode by the coprocessor
                 if (procNum == 9 && TimeAnswer(PeekStackWord(2), PeekStackWord(0))) {

@@ -376,6 +376,9 @@ public:
     // then 0; the UI shows a warning. Re-opening the unit (or restarting)
     // reloads the file and clears the refusal.
     int TakeChangedOnDiskUnit(std::wstring& pathOut);
+    // A program changed a unit's image (CSP 140, 2.14): that unit (and its new path, "" when it
+    // took the image off) once, then 0; the UI takes it as the unit's image.
+    int TakeMountedUnit(std::wstring& pathOut);
     bool IsChangedOnDisk(int unit) const;
 
     // Instruction-frequency instrumentation, purely for deciding which
@@ -508,6 +511,7 @@ private:
     DiskStamp m_diskStamp[kDrives];
     bool m_changedOnDisk[kDrives] = {};
     std::atomic<int> m_changedOnDiskPending{ 0 };   // unit number for the UI, 0 = none
+    std::atomic<int> m_mountedPending{ 0 };         // a unit CSP 140 changed, for the UI (0 none)
     void StampDrive(int drive);
     bool DriveFileUnchanged(int drive);
     BigDiskState m_bd;
@@ -720,6 +724,10 @@ private:
     // image's blocks after it; -1 with no image there, or when the file cannot be
     // changed (replaced since it was loaded, read-only, no room on the PC's disk).
     int UnitImageSize(uint8_t unit, int blocks);
+    // Version 2.14, CSP 140 (MOUNT) and 141 (IMAGENAME), NativeMount.inc: a program changes a
+    // unit's image by its name (from the same folder), and reads that name.
+    int MountByName(uint8_t unit, const std::string& name);
+    std::string ImageFileName(uint8_t unit);
     // Shared BLDMSCW ("Build Mark Stack Context Word") helper for CLP and
     // CBP. Reads proc_num from the code stream, looks up the procedure's
     // jtab via the segment table, extends the stack and copies parameters,

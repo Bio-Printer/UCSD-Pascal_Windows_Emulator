@@ -599,6 +599,21 @@ void CMainFrame::OnTimer(UINT_PTR nIDEvent) {
             // A mounted volume's file was replaced while the emulator ran
             // (e.g. a git pull): the engine refuses to write into it, so its
             // older copy cannot overwrite the new file. Say so once.
+            // A program changed a unit's image (CSP 140, Tiny-C's MOUNT; 2.14): it is that
+            // unit's image now -- the File menu shows it, and the next launch loads it.
+            std::wstring mountedPath;
+            if (const int mu = m_engine->TakeMountedUnit(mountedPath)) {
+                switch (mu) {
+                    case 5:  m_scratchDiskPath = mountedPath; break;
+                    case 9:  m_unit9Path = mountedPath; break;
+                    case 10: m_unit10Path = mountedPath; break;
+                    case 11: m_unit11Path = mountedPath; break;
+                    case 12: m_unit12Path = mountedPath; break;
+                    case 13: m_unit13Path = mountedPath; break;
+                    case 14: m_unit14Path = mountedPath; break;
+                }
+                SaveSettings();
+            }
             std::wstring changedPath;
             const int unit = m_engine->TakeChangedOnDiskUnit(changedPath);
             if (unit) {
