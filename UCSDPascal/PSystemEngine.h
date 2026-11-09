@@ -733,6 +733,16 @@ private:
     // unit's image by its name (from the same folder), and reads that name.
     int MountByName(uint8_t unit, const std::string& name);
     std::string ImageFileName(uint8_t unit);
+    // CSP 142 VOLADDR, 143 VOLINFO (2.18): the volumes a program can MOUNT, by number (0, 1, ...):
+    // here the .BLK files in the boot disk's folder, by name; false: no volume of that number
+    struct VolumeEntry {
+        std::string name;               // as MOUNT takes it (here the file's name without .BLK)
+        uint32_t addr = 0;              // where it is: a part's flash address; here its number + 1
+        uint32_t blocks = 0;
+        uint8_t unit = 0;               // the unit it is on now, 0 none
+        uint8_t flags = 0;              // 1 read-only, 2 persistent (a part's)
+    };
+    bool VolumeAt(int index, VolumeEntry& out);
     // Shared BLDMSCW ("Build Mark Stack Context Word") helper for CLP and
     // CBP. Reads proc_num from the code stream, looks up the procedure's
     // jtab via the segment table, extends the stack and copies parameters,

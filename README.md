@@ -396,6 +396,25 @@ dropped when it is installed.  Harvard mode now needs I-space (64 KB) and a few 
 fits the RP2040 port, together with 2.16 (no segment-sized buffer).  Nothing a program sees
 changes.
 
+## Version 2.18: the volumes there are to MOUNT
+
+Two standard procedures more (`NativeMount.inc`; in Z80 mode the coprocessor runs them), so
+that a program can list what MOUNT (CSP 140) can put on a unit -- UCSD-TinyC's shell (VOLUMES)
+and MOUNT do:
+
+    CSP 142 VOLADDR  index                 -> address (a long: two words, the low one on top)
+    CSP 143 VOLINFO  index, address of a 32-byte record -> 1 found, 0 no such volume
+
+The volumes are numbered from 0 (`PSystemEngine::VolumeAt`): here the `.BLK` files (6 blocks or
+more) in the boot disk's folder, sorted by name -- the folder MOUNT looks in for a unit with no
+image of its own.  VOLADDR is 0 when there is no such volume; here, where there is no flash, it
+is the volume's number + 1.  On the RP2040
+([UCSD-Pascal-on-RP2040](https://github.com/Bio-Printer/UCSD-Pascal-on-RP2040)) the volumes are
+those of the flash catalog, and VOLADDR is the volume's flash address (0x10000000 + its offset).
+VOLINFO's record: the name MOUNT takes (here the file's name without `.BLK`), NUL-terminated, in
+bytes 0..23; the blocks (word 12); the unit it is on now, 0 none (word 13); flags (word 14: 1
+read-only, 2 persistent -- the RP2040's); word 15 is 0.
+
 ## Volume files changed while the emulator runs
 
 The emulator reads each volume image into memory when it mounts it and

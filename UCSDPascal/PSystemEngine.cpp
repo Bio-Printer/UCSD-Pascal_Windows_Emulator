@@ -761,6 +761,36 @@ int PSystemEngine::MountByName(uint8_t unit, const std::string& name) {
     return (int)(m_volDrive[drive].size() / 512);
 }
 
+// CSP 142, 143 (2.18): the index-th disk image a program can MOUNT: the .BLK files in the boot
+// disk's folder (MountByName's folder for a unit with no image of its own), sorted by name
+bool PSystemEngine::VolumeAt(int index, VolumeEntry& out) {
+    namespace fs = std::filesystem;
+    if (index < 0 || m_volDrivePath[0].empty()) return false;
+    std::error_code ec;
+    const fs::path dir = fs::path(m_volDrivePath[0]).parent_path();
+    auto upper = [](std::wstring w) { for (wchar_t& c : w) c = (wchar_t)towupper(c); return w; };
+    std::vector<std::pair<std::wstring, fs::path>> files;
+    for (fs::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec)) {
+        std::error_code e2;
+        if (!it->is_regular_file(e2) || upper(it->path().extension().wstring()) != L".BLK") continue;
+        if (it->file_size(e2) < 6 * 512) continue;
+        files.emplace_back(upper(it->path().filename().wstring()), it->path());
+    }
+    std::sort(files.begin(), files.end());
+    if (index >= (int)files.size()) return false;
+    const fs::path& p = files[index].second;
+    out = VolumeEntry();
+    for (wchar_t c : p.stem().wstring()) out.name += (c >= 32 && c < 127) ? (char)c : '_';
+    out.addr = (uint32_t)index + 1;
+    out.blocks = (uint32_t)(fs::file_size(p, ec) / 512);
+    static const uint8_t units[] = { 4, 5, 9, 10, 11, 12, 13, 14 };
+    for (uint8_t u : units) {
+        const std::wstring* dp = DrivePath(UnitValueToDrive(u));
+        if (dp && !dp->empty() && fs::equivalent(fs::path(*dp), p, ec)) { out.unit = u; break; }
+    }
+    return true;
+}
+
 // CSP 141 (2.14): the image file's name on unit, without its folder ("" none)
 std::string PSystemEngine::ImageFileName(uint8_t unit) {
     const int drive = UnitValueToDrive(unit);
@@ -3132,7 +3162,7 @@ void PSystemEngine::RunLoop() {
                 [&]() { const uint16_t h = PeekStackWord(2), l = PeekStackWord(0);
                         const uint16_t hv = (uint16_t)(m_mem[h] | (m_mem[(uint16_t)(h + 1)] << 8)), lv = (uint16_t)(m_mem[l] | (m_mem[(uint16_t)(l + 1)] << 8));
                         return hv == lv && (hv == 25611 || hv == 25612); }();
-            if ((cpNum >= 100 && cpNum <= 141) || (cpNum >= 25 && cpNum <= 31 && cpNotImp) || cpTime) {
+            if ((cpNum >= 100 && cpNum <= 143) || (cpNum >= 25 && cpNum <= 31 && cpNotImp) || cpTime) {
                 nativeOpcodeLookup = OP_CSP;                              // the coprocessor
                 m_z80CoprocCount++;
             }
@@ -3880,7 +3910,7 @@ void PSystemEngine::RunLoop() {
 #include "NativeCalli.inc"
                 // CSP 139: a disk image's size (NativeUnitSize.inc)
 #include "NativeUnitSize.inc"
-                // CSP 140 MOUNT, 141 IMAGENAME: a unit's disk image by name (NativeMount.inc)
+                // CSP 140 MOUNT, 141 IMAGENAME, 142 VOLADDR, 143 VOLINFO: disk images by name (NativeMount.inc)
 #include "NativeMount.inc"
                 // CSP 9 TIME with both variables 25611 / 25612 (2.13): a file's time stamp,
                 // today's date (TimeAnswer) -- P-Code mode, and Z80 mode by the coprocessor
