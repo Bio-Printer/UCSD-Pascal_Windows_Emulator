@@ -485,7 +485,7 @@ private:
     std::vector<uint16_t> m_constAddr;
     int m_constUnwalked = 0;                              // procedures the constant scan could not walk (test aid)
     void HarvardConstFault(uint16_t lenAt);
-    uint16_t HarvardSelfPatchTarget(uint16_t a) const;    // Tiny-C /Z call sequence: the CXP operand its STO writes
+    uint16_t HarvardSelfPatchTarget(uint16_t a) const;    // UCSD-C /Z call sequence: the CXP operand its STO writes
     uint16_t m_codeStoreAt = 0;                           // that address while the sequence runs (0: none)
     // EXECERROR's location shadow (see SetHarvard): one 12-byte slot per
     // EXECERROR frame in use (a run-time error inside EXECERROR nests).

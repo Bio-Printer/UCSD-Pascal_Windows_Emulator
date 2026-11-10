@@ -171,13 +171,13 @@ reproduced (determinism and verification in one pass; ~1.3 GB of free disk
 space needed for the build's log). (v1.82: 48,529,153 and
 1,396,121 instructions.)
 
-## Check 13: the Tiny-C compiler (full mode only)
+## Check 13: the UCSD-C compiler (full mode only)
 
-verify/CXPBUG.BLK holds the Tiny-C compiler (TINYC.CODE) and FV.TEXT, whose
+verify/CXPBUG.BLK holds the UCSD-C compiler (UCSDC.CODE) and FV.TEXT, whose
 compile makes calls into other segments far more than 64 frames deep. The
 compile pass is recorded in Z80 mode and a native run must match it
-instruction for instruction (TINYC_FV.SCRIPT); with memory reclaimed the
-whole compile must reach "Done." (TINYC_FV_FULL.SCRIPT). On v1.83 the native
+instruction for instruction (UCSDC_FV.SCRIPT); with memory reclaimed the
+whole compile must reach "Done." (UCSDC_FV_FULL.SCRIPT). On v1.83 the native
 run stopped after 270,000 instructions (the CXP static-link search bug).
 
 ## Z80 profile (not a pass/fail check)

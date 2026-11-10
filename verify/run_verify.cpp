@@ -135,7 +135,7 @@ int main(int argc, char** argv) {
     if (getenv("VERIFY_BURST")) r.SetBurst(true);    // a TYPE is posted at once (type-ahead)
     // VERIFY_SCREEN=file: the screen (the emulator's character grid, trailing blanks left
     // out) each time the system waits for a key after the script typed another one, one
-    // after the other: "== key N (cursor x,y)", then its rows (a screen of Tiny-C's vi after
+    // after the other: "== key N (cursor x,y)", then its rows (a screen of UCSD-C's vi after
     // every key can be compared between two builds of vi or of the emulator)
     FILE* screenFile = getenv("VERIFY_SCREEN") ? fopen(getenv("VERIFY_SCREEN"), "wb") : nullptr;
     size_t screenKeys = (size_t)-1;

@@ -1,4 +1,4 @@
-# TINYC_FV.SCRIPT -- the Tiny-C compiler (TINYC.CODE on CXPBUG.BLK, unit 9)
+# UCSDC_FV.SCRIPT -- the UCSD-C compiler (UCSDC.CODE on CXPBUG.BLK, unit 9)
 # compiling FV.TEXT, up to "Generating code" (without reclaimed memory the
 # code generator then needs more stack than there is). Its recursive-descent
 # parser calls into other segments far more than 64 frames deep: the native
@@ -15,7 +15,7 @@ TYPE "Q"
 WAIT "Command:"
 TYPE "X"
 WAIT "Execute what file?"
-TYPE "TINYC\r"
+TYPE "UCSDC\r"
 WAIT "Compile what file?"
 TYPE "/C FV\r"
 WAIT "Compiling"

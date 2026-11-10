@@ -14,7 +14,7 @@
 //       off (as File > Close Unit).  result: the new image's blocks (0 for ""), or -1 no
 //       such image, -2 a unit that cannot be changed, -3 a bad name
 //       (PSystemEngine::MountByName).  The P-System's own idea of the unit's volume is the
-//       program's to refresh: Tiny-C's MOUNT does it.
+//       program's to refresh: UCSD-C's MOUNT does it.
 //   141 IMAGENAME  I unit, A buf, I size -> I length
 //       the name of the image file on unit (no folder: U132.A_PASCAL_COMPILER_SOURCE.BLK)
 //       into buf, NUL-terminated, at most size - 1 characters; its length, -1 with no image.

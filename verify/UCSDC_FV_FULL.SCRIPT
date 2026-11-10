@@ -1,4 +1,4 @@
-# TINYC_FV_FULL.SCRIPT -- the whole Tiny-C compile of FV.TEXT, to "Done." --
+# UCSDC_FV_FULL.SCRIPT -- the whole UCSD-C compile of FV.TEXT, to "Done." --
 # needs the reclaimed memory (P-Code mode, compatibility off, reclaim).
 # Validation Check 13.
 
@@ -13,7 +13,7 @@ TYPE "Q"
 WAIT "Command:"
 TYPE "X"
 WAIT "Execute what file?"
-TYPE "TINYC\r"
+TYPE "UCSDC\r"
 WAIT "Compile what file?"
 TYPE "/C FV\r"
 WAIT "Compiling"

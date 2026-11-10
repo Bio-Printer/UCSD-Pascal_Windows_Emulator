@@ -54,7 +54,7 @@ WAIT "DEPTH 60: 1"
 WAIT "DEPTH 70: 1"
 WAIT "Command:"
 
-# DEEPC: the same through Tiny-C code (errtest/DEEPC.C.txt).
+# DEEPC: the same through UCSD-C code (errtest/DEEPC.C.txt).
 TYPE "X"
 WAIT "Execute what file?"
 TYPE "#9:DEEPC\r"

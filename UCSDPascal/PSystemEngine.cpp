@@ -1426,7 +1426,7 @@ bool PSystemEngine::TimeAnswer(uint16_t hiAddr, uint16_t loAddr) {
     return true;
 }
 
-// Tiny-C's older call through a function pointer (its -z / /Z option, kept
+// UCSD-C's older call through a function pointer (its -z / /Z option, kept
 // because it also runs in Z80 mode) stores the function value into the
 // operands of the CXP that follows:
 //     LPA 0 ; SLDC n ; ADI ; SLDL t | LDL t ; STO ; CXP seg,proc
@@ -1434,7 +1434,7 @@ bool PSystemEngine::TimeAnswer(uint16_t hiAddr, uint16_t loAddr) {
 // byte). In the Harvard layout that store must go to I-space. Given the
 // address after LPA 0's length byte, returns the CXP operand address the STO
 // will write when the code is exactly this sequence, else 0. (The same pattern
-// tools/pcensus.py --selfpatch of Tiny-C recognises.)
+// tools/pcensus.py --selfpatch of UCSD-C recognises.)
 uint16_t PSystemEngine::HarvardSelfPatchTarget(uint16_t a) const {
     const uint8_t n = PM_CODE8(a);
     if (n >= 0x80 || PM_CODE8((uint16_t)(a + 1)) != OP_ADI) return 0;     // SLDC n ; ADI
@@ -1552,7 +1552,7 @@ uint16_t PSystemEngine::CodeFree(uint8_t seg) {
 
 // The LSA/LPA constants of a segment image (offset 0 = its lowest byte): every
 // P-code procedure is walked instruction by instruction from its entry to its
-// return (RNP/RBP/XIT), as tools/pcensus.py of Tiny-C (UCSD-TinyC) does, with the
+// return (RNP/RBP/XIT), as tools/pcensus.py of UCSD-C does, with the
 // operand formats of the UCSD utility volume's OPCODES.II.0 (the table DISASM
 // uses): 0 short, 1 one byte, 2 "big" (1 or 2 bytes), 3 two bytes, 4 byte +
 // big, 5 XJP (aligned min, max, else jump, table), 6 length + characters (LSA,
@@ -3816,7 +3816,7 @@ void PSystemEngine::RunLoop() {
             case OP_STO: { // STO: Store indirect. Pop value, pop address, store.
                 uint16_t value = PopStackWord();
                 uint16_t addr = PopStackWord();
-                if (m_codeStoreAt != 0 && addr == m_codeStoreAt) {   // Harvard: Tiny-C /Z call sequence (see LPA)
+                if (m_codeStoreAt != 0 && addr == m_codeStoreAt) {   // Harvard: UCSD-C /Z call sequence (see LPA)
                     PM_CODEW8(addr, value & 0xFF);
                     PM_CODEW8((uint16_t)(addr + 1), value >> 8);
                     m_codeStoreAt = 0;

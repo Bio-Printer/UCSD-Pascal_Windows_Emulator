@@ -496,7 +496,7 @@ void CMainFrame::OnChar(UINT nChar, UINT nRepCnt, UINT nFlags) {
 //     Delete     "D" ^U ^C  delete the character under the cursor
 //   Every sequence was checked against the real SYSTEM.EDITOR in the
 //   harness (v1.68).
-//   A program that sets SYSCOM^.EXPANSION[1] to 25605 while it runs (Tiny-C's
+//   A program that sets SYSCOM^.EXPANSION[1] to 25605 while it runs (UCSD-C's
 //   vi; PX_KEYS in psys.h) gets these six keys as one code each instead:
 //   Home 0x84, End 0x85, Insert 0x86, Delete 0x87, Page Up 0x88,
 //   Page Down 0x89 (KEY_HOME ... KEY_PGDN in psys.h).
@@ -533,7 +533,7 @@ void CMainFrame::OnKeyDown(UINT nChar, UINT nRepCnt, UINT nFlags) {
 // The mouse wheel: for a program that asks for one code per key (the same
 // SYSCOM^.EXPANSION[1] = 25605 as for Page Up ... Delete), each notch away
 // from you sends 0x96, each notch towards you 0x97 (KEY_WHEELUP and
-// KEY_WHEELDN in Tiny-C's psys.h; vi scrolls 3 lines for each). Finer
+// KEY_WHEELDN in UCSD-C's psys.h; vi scrolls 3 lines for each). Finer
 // wheels and touchpads add up to a notch (WHEEL_DELTA) first. Without the
 // flag the wheel sends nothing, as before.
 BOOL CMainFrame::OnMouseWheel(UINT nFlags, short zDelta, CPoint pt) {
@@ -599,7 +599,7 @@ void CMainFrame::OnTimer(UINT_PTR nIDEvent) {
             // A mounted volume's file was replaced while the emulator ran
             // (e.g. a git pull): the engine refuses to write into it, so its
             // older copy cannot overwrite the new file. Say so once.
-            // A program changed a unit's image (CSP 140, Tiny-C's MOUNT; 2.14): it is that
+            // A program changed a unit's image (CSP 140, UCSD-C's MOUNT; 2.14): it is that
             // unit's image now -- the File menu shows it, and the next launch loads it.
             std::wstring mountedPath;
             if (const int mu = m_engine->TakeMountedUnit(mountedPath)) {

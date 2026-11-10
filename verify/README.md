@@ -272,7 +272,7 @@ the suites; the engine stops with a message if it happens):
 
 ## Deep calls: the CXP / CIP static-link search (v1.84)
 
-Found by the Tiny-C compiler (UCSD-TinyC project, repro/DEEPCXP). When a
+Found by the UCSD-C compiler (UCSD-C project, repro/DEEPCXP). When a
 procedure at lex level >= 1 is called, CIPXNL searches the DYNAMIC chain for
 the first frame one lex level lower -- as many frames as the recursion is
 deep. The native CXP and CIP gave up after 64 frames and then jumped into the
@@ -281,17 +281,17 @@ target level), so the Z80 code looped forever -- and with memory reclaimed
 it is not there at all. A recursive-descent compiler calls into other
 segments much deeper than 64 frames.
 
-Fix (patch from the UCSD-TinyC project, reviewed and applied): the search limit
+Fix (patch from the UCSD-C project, reviewed and applied): the search limit
 is 30000 in NativeCxp.inc (CXP) and the native CIP (PSystemEngine.cpp and
 the linux-harness copies); a 64K stack holds fewer than 5,500 frames, so the
 search always completes natively, as the Z80 loop does. In addition the
 hand-over itself now provides the Z80 loop's state (IPC pushed, A = target):
-with the limit forced down to 4 in a test build, the Tiny-C FV compile still
+with the limit forced down to 4 in a test build, the UCSD-C FV compile still
 matches the Z80 reference instruction for instruction.
 
 Regression tests: ERRORS.SCRIPT runs DEEPCXP (CXP 60 and 70 frames deep),
-DEEPC (the same in Tiny-C) and DEEPCIP (CIP from 150 frames deep) in every
-mode (Check 9); Check 13 runs the Tiny-C compile itself. The old v1.83
+DEEPC (the same in UCSD-C) and DEEPCIP (CIP from 150 frames deep) in every
+mode (Check 9); Check 13 runs the UCSD-C compile itself. The old v1.83
 engine fails both.
 
 ## Harvard layout regression programs (engine 1.92)

@@ -14,7 +14,7 @@
 //
 // ARGUMENTS are pushed in order (the first deepest); "D" is an 8-byte
 // value, "F" a 4-byte UCSD real, "I" a word, "L" a long (2 words, low word
-// on top, as Tiny-C stores it), "A" an address. Results replace them.
+// on top, as UCSD-C stores it), "A" an address. Results replace them.
 //   100 DADD  D a, D b -> D a+b        101 DSUB  D a, D b -> D a-b
 //   102 DMUL  D a, D b -> D a*b        103 DDIV  D a, D b -> D a/b
 //   104 DNEG  D a -> D -a

@@ -250,16 +250,16 @@ echo
 fi
 
 if [ $QUICK -eq 0 ] && [ -x /tmp/validation_run_verify ]; then
-echo "=== Check 13: the Tiny-C compiler compiling FV.TEXT (deep calls between segments: CXP) ==="
+echo "=== Check 13: the UCSD-C compiler compiling FV.TEXT (deep calls between segments: CXP) ==="
 rm -rf /tmp/vv_tz /tmp/vv_tn /tmp/vv_tr /tmp/vv_tz.pcl
-/tmp/validation_run_verify ../data ../verify/SOURCE.BLK ../verify/CXPBUG.BLK ../verify/TINYC_FV.SCRIPT z80 /tmp/vv_tz record:/tmp/vv_tz.pcl 600 2>/dev/null | tail -1
-/tmp/validation_run_verify ../data ../verify/SOURCE.BLK ../verify/CXPBUG.BLK ../verify/TINYC_FV.SCRIPT native /tmp/vv_tn compare:/tmp/vv_tz.pcl 600 2>/dev/null | tee /tmp/vv_tn.out | tail -1
-VERIFY_RECLAIM=1 /tmp/validation_run_verify ../data ../verify/SOURCE.BLK ../verify/CXPBUG.BLK ../verify/TINYC_FV_FULL.SCRIPT native /tmp/vv_tr "" 600 2>/dev/null | tee /tmp/vv_tr.out | tail -1
+/tmp/validation_run_verify ../data ../verify/SOURCE.BLK ../verify/CXPBUG.BLK ../verify/UCSDC_FV.SCRIPT z80 /tmp/vv_tz record:/tmp/vv_tz.pcl 600 2>/dev/null | tail -1
+/tmp/validation_run_verify ../data ../verify/SOURCE.BLK ../verify/CXPBUG.BLK ../verify/UCSDC_FV.SCRIPT native /tmp/vv_tn compare:/tmp/vv_tz.pcl 600 2>/dev/null | tee /tmp/vv_tn.out | tail -1
+VERIFY_RECLAIM=1 /tmp/validation_run_verify ../data ../verify/SOURCE.BLK ../verify/CXPBUG.BLK ../verify/UCSDC_FV_FULL.SCRIPT native /tmp/vv_tr "" 600 2>/dev/null | tee /tmp/vv_tr.out | tail -1
 ok13=1
 grep -q "VERIFY SCRIPT COMPLETED" /tmp/vv_tn.out && ! grep -q MISMATCH /tmp/vv_tn.out || ok13=0
 grep -q "VERIFY SCRIPT COMPLETED" /tmp/vv_tr.out && grep -q "Done\." /tmp/vv_tr/transcript.txt || ok13=0
 echo "     compile pass: native matches the Z80 reference instruction for instruction; with memory reclaimed: $(grep -c 'Done\.' /tmp/vv_tr/transcript.txt) \"Done.\""
-if [ $ok13 -eq 1 ]; then echo "PASS"; else echo "FAIL: Tiny-C FV compile"; head -8 /tmp/vv_tn.out; FAIL=1; fi
+if [ $ok13 -eq 1 ]; then echo "PASS"; else echo "FAIL: UCSD-C FV compile"; head -8 /tmp/vv_tn.out; FAIL=1; fi
 rm -f /tmp/vv_tz.pcl
 echo
 fi

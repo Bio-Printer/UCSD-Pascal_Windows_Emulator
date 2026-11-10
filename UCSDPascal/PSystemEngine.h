@@ -188,8 +188,8 @@ public:
     void SetBootKeyWait(bool on) { m_bootKeyWait = on; }
     void PublishKeyCount();     // 25609 / 25610: the keys waiting, in EXPANSION[2] (version 2.04); m_keyLock held
     // A program that wants Page Up, Page Down, Home, End, Insert and Delete
-    // as one code each (Tiny-C's vi) sets SYSCOM^.EXPANSION[1] to 25605
-    // (PX_KEYS in Tiny-C's psys.h) while it runs. See MainFrm OnKeyDown.
+    // as one code each (UCSD-C's vi) sets SYSCOM^.EXPANSION[1] to 25605
+    // (PX_KEYS in UCSD-C's psys.h) while it runs. See MainFrm OnKeyDown.
     bool WantsKeyCodes() const;
     // 25606 (PX_KEYS_BLOCK) asks for the same keys and a block cursor (version 2.02).
     bool WantsBlockCursor() const;
@@ -412,7 +412,7 @@ public:
     // RunLoop()) instead of executing the real BIOS at 0xFE00.
     uint64_t DebugBiosLinkerNativeCount() const { return m_biosLinkerNativeCount; }
 
-    // Sub-volumes (Tiny-C's MKDIR, VOL:/A/B/NAME paths): a data file (kind 5,
+    // Sub-volumes (UCSD-C's MKDIR, VOL:/A/B/NAME paths): a data file (kind 5,
     // or untyped 0) whose own blocks 2..5 hold a valid UCSD directory, its
     // block numbers counted from the file's first block.  "base" below is a
     // sub-volume's first block on the disk; 0 is the volume itself.
@@ -583,7 +583,7 @@ private:
     uint16_t ConstCopy(uint16_t a) const;
     int m_constUnwalked = 0;                              // procedures the constant scan could not walk (test aid)
     void HarvardConstFault(uint16_t lenAt);
-    uint16_t HarvardSelfPatchTarget(uint16_t a) const;    // Tiny-C /Z call sequence: the CXP operand its STO writes
+    uint16_t HarvardSelfPatchTarget(uint16_t a) const;    // UCSD-C /Z call sequence: the CXP operand its STO writes
     uint16_t m_codeStoreAt = 0;                           // that address while the sequence runs (0: none)
     // EXECERROR's location shadow (see SetHarvard): one 12-byte slot per
     // EXECERROR frame in use (a run-time error inside EXECERROR nests).

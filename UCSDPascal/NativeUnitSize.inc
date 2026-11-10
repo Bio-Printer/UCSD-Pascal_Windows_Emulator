@@ -10,8 +10,8 @@
 //       blocks 0: no change. size: the image's blocks after it; -1 with no
 //       image on that unit, a bad size, or a file that cannot be changed.
 //       Nothing else is touched: the volume's own size (its directory's
-//       DEOVBLK) is the program's to write. Tiny-C's GROW and SHRINK of a
-//       volume use it (UCSD-TinyC tinyc/lib/subvol.c).
+//       DEOVBLK) is the program's to write. UCSD-C's GROW and SHRINK of a
+//       volume use it (UCSD-C ucsdc/lib/subvol.c).
 if (procNum == 139) {
     const int usBlocks = (int16_t)PopStackWord();
     const uint8_t usUnit = (uint8_t)PopStackWord();

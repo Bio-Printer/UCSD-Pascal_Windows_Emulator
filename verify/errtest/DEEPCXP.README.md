@@ -1,7 +1,7 @@
 # CXP more than 64 frames deep (P-Code mode only)
 
 `deepcxp.pas` / `DEEPCXP.CODE` (Pascal, 3 blocks) and `deepc.c` /
-`DEEPC.CODE` (Tiny-C) do the same thing: a recursive function goes N deep
+`DEEPC.CODE` (UCSD-C) do the same thing: a recursive function goes N deep
 and then calls a function in another segment (CXP).
 
 | mode   | DOWN(60) | DOWN(70) |
@@ -34,7 +34,7 @@ things the native path never sets up:
 With memory reclaimed, the Z80 code at 137F isn't there at all (it reads as
 00 00 00).
 
-Every Tiny-C function is lex level 1 and the target is the lex-0 program
+Every UCSD-C function is lex level 1 and the target is the lex-0 program
 frame, so any cross-segment call made more than about 64 calls deep hits
 this. A recursive-descent compiler does that all the time.
 

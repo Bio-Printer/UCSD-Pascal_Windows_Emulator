@@ -4,7 +4,7 @@ A Windows (MFC) emulator of the UCSD Pascal II.0 P-System: a Z80 machine
 with native P-Code execution (`UCSDPascal/PSystemEngine.cpp` and the
 `Native*.inc` files), including the 8-byte `double` CSPs 100..137
 (`NativeDouble.inc`) and CSP 138, CALLI -- call through a function pointer
-(`NativeCalli.inc`) -- used by Tiny-C (https://github.com/Bio-Printer/UCSD-TinyC).
+(`NativeCalli.inc`) -- used by UCSD-C (https://github.com/Bio-Printer/UCSD-C).
 
 * **Build:** open `UCSDPascal.sln` in Visual Studio (x64). `data/pascal.bin`
   (the Z80 loader) is copied next to the .exe by the build.
@@ -27,8 +27,8 @@ Free memory (Linux runs of the same engine):
 | | normal reclaimed layout | Harvard mode |
 |---|---|---|
 | Pascal compiler compiling itself (Verify build) | 7,782 words | 21,477 words |
-| Tiny-C compiling PI.C, Preprocessing | 14,175 words | 21,834 words |
-| Tiny-C voltest, least memory (linking) | 8,111 words | 15,770 words |
+| UCSD-C compiling PI.C, Preprocessing | 14,175 words | 21,834 words |
+| UCSD-C voltest, least memory (linking) | 8,111 words | 15,770 words |
 
 What it means for programs (details: `PSystemEngine::SetHarvard` in
 `UCSDPascal/PSystemEngine.h`):
@@ -36,7 +36,7 @@ What it means for programs (details: `PSystemEngine::SetHarvard` in
 * String and packed-array constants in the code (LSA, LPA) are copied to a
   constant pool in D-space when their segment is loaded; the pool lives and
   dies where the segment would have been on the stack.
-* Tiny-C's `/Z` call sequence, which stores into its own CXP operands, is
+* UCSD-C's `/Z` call sequence, which stores into its own CXP operands, is
   recognised and that one store writes I-space.
 * Run-time errors: EXECERROR's PRINTLOCS reads the failing location through
   pointers into the code; the engine gives it a copy, so `S#, P#, I#` are
@@ -59,8 +59,8 @@ exactly those CSPs with the same native code as P-Code mode, as a math
 coprocessor board would: when the interpreter's CSP routine (0x15B8) is about
 to dispatch one of them, the engine runs it and returns to BACK1. Every other
 P-code, every other CSP included, is still the Z80 interpreter, and nothing on
-the disks changes. So Tiny-C programs with doubles, `float` functions or
-function pointers run in Z80 mode with bit-identical results, and Tiny-C's
+the disks changes. So UCSD-C programs with doubles, `float` functions or
+function pointers run in Z80 mode with bit-identical results, and UCSD-C's
 `-z` / `/Z` is no longer needed for Z80 mode (it still works). Programs that
 use none of these CSPs run exactly as before (the Verify reference logs are
 unchanged). `PSystemEngine::SetZ80Coprocessor(false)` (run_verify:
@@ -128,8 +128,8 @@ that word the least free memory, in words (SP - NP, at least 1), since
 then; storing 0 stops it.  Until it sees 0xFFFF the engine leaves the
 word alone, and without the engine (another machine) the word keeps the
 0xFFFF, so the program can tell.  It is always on, independent of the
-menu option.  Tiny-C: memleast_start(), memleast(), memleast_stop() in
-psys.h; the Tiny-C compiler's "(N words free)" after each pass is that
+menu option.  UCSD-C: memleast_start(), memleast(), memleast_stop() in
+psys.h; the UCSD-C compiler's "(N words free)" after each pass is that
 pass's least, so the least of them is what the status bar shows.
 
 ## Page Up ... Delete and the mouse wheel as one code each (versions 2.00, 2.01)
@@ -137,7 +137,7 @@ pass's least, so the least of them is what the status bar shows.
 Page Up, Page Down, Home, End, Insert and Delete have no setting in
 SYSTEM.MISCINFO, so the emulator types the UCSD editor's own commands for
 them (Page Down `>P`, Page Up `<P>`, Home `JB`, End `JE`, Insert `I`,
-Delete `D` ^U ^C; see EDITOR_KEYS.md). Other programs -- Tiny-C's vi --
+Delete `D` ^U ^C; see EDITOR_KEYS.md). Other programs -- UCSD-C's vi --
 take those letters as their own commands. From version 2.00 a program can
 ask for one code per key instead: while the word SYSCOM^.EXPANSION[1]
 (address 0x030A in the P-machine's variable block; the operating system
@@ -158,15 +158,15 @@ and everything else get the keys as before.
 From version 2.01 the mouse wheel takes part too: while the word is 25605
 each notch away from you sends 0x96 and each notch towards you 0x97
 (finer wheels and touchpads add up to a notch first); otherwise the wheel
-sends nothing. Tiny-C: `KEY_WHEELUP` and `KEY_WHEELDN` in psys.h; vi
+sends nothing. UCSD-C: `KEY_WHEELUP` and `KEY_WHEELDN` in psys.h; vi
 scrolls 3 lines a notch (as ^Y / ^E), in command mode.
 
 From version 2.02 the word may also be 25606: the same keys and wheel, and
 the cursor drawn as a block (its cell inverted: green ground, the
 character black) instead of the line under it, so it is easy to find.
-When the program puts 0 back the cursor is a line again. Tiny-C:
+When the program puts 0 back the cursor is a line again. UCSD-C:
 `PX_KEYS_BLOCK` in psys.h; vi asks for it (the shell, with 25605, does
-not). Tiny-C: `PX_KEYS` and
+not). UCSD-C: `PX_KEYS` and
 `KEY_HOME` ... `KEY_PGDN` in psys.h; vi (TOOLS:VI.CODE) does it, and its
 Page Up/Down page, Home/End go to the start/end of the line, Insert
 inserts and Delete deletes the character under the cursor.
@@ -190,7 +190,7 @@ instead). While the word is 25607 or 25608 the console takes (ESC is 27):
 The cursor does not move; the screen starts with the whole screen as the
 region. (These are the ANSI / VT100 codes for scrolling, not the VT52's, which
 has none; the one-byte codes of the system's own console are unchanged.) Any
-other byte after ESC is an ordinary byte, as before. Tiny-C: `PX_KEYS_SCROLL`
+other byte after ESC is an ordinary byte, as before. UCSD-C: `PX_KEYS_SCROLL`
 in psys.h; vi uses them for Page Down, Page Up and a cursor that scrolls the
 screen.
 
@@ -202,7 +202,7 @@ SYSCOM^.EXPANSION[1] to **25609** (everything 25607 asks for, and the count of k
 waiting); the emulator answers **25610** and keeps the number of keys not yet read by
 the program (0..255) in SYSCOM^.EXPANSION[2], updated as keys arrive from Windows and as the
 program reads them.  An older emulator leaves 25609: the program then stores 25607.
-Tiny-C: `PX_KEYS_AHEAD` / `PX_AHEAD_OK` in psys.h; vi paints the screen only when no key
+UCSD-C: `PX_KEYS_AHEAD` / `PX_AHEAD_OK` in psys.h; vi paints the screen only when no key
 is waiting (typing, `j`, the mouse wheel: one repaint after a burst).  The verify runner
 types a whole TYPE at once with `VERIFY_BURST=1`.
 
@@ -230,7 +230,7 @@ grow for that long.
 ## Import and Export reach into sub-volumes (version 2.07)
 
 A sub-volume is a data file whose own blocks 2..5 hold a UCSD directory -- a volume inside a file,
-its block numbers counted from the file's first block (Tiny-C's shell makes one with `MKDIR NAME
+its block numbers counted from the file's first block (UCSD-C's shell makes one with `MKDIR NAME
 [BLOCKS]`; its files are `VOL:/A/B/NAME`).  Options > **Import File** has an "Into" list below the
 units: the chosen unit's volume and every sub-volume on it (`BIGGY:`, `BIGGY:/A`, `BIGGY:/A/B`),
 and the file goes into the one picked.  Options > **Export File** lists a sub-volume as `A/` (kind
@@ -267,8 +267,8 @@ resize_file`, the file's stamp taken again, so it is not later taken for a file 
 the emulator's back).  `blocks` 0 changes nothing.  It returns the image's blocks, or -1 with no
 image on that unit, a bad size, or a file that cannot be changed (replaced since it was loaded,
 read-only, no room on the PC's disk).  The volume's own size, its directory's DEOVBLK, is the
-program's to write: Tiny-C's GROW and SHRINK of a volume (`GROW #5: +1000`, `SHRINK #5:`;
-[UCSD-TinyC](https://github.com/Bio-Printer/UCSD-TinyC) `tinyc/lib/subvol.c`) grow the image
+program's to write: UCSD-C's GROW and SHRINK of a volume (`GROW #5: +1000`, `SHRINK #5:`;
+[UCSD-C](https://github.com/Bio-Printer/UCSD-C) `ucsdc/lib/subvol.c`) grow the image
 before the directory says so, and cut it after.  A block write past an image's end is refused
 as before (IORESULT 1).  In Z80 mode the coprocessor runs it, as CSP 100..138
 (`NativeUnitSize.inc`).
@@ -343,8 +343,8 @@ runs stay deterministic and a test can say how much time passed.
 ## A program changes a unit's disk (version 2.14)
 
 A program can now give a disk unit another image, as File > Open Unit does, so that a makefile
-can bring each volume it needs on line in turn (UCSD-TinyC's MOUNT and its master makefile,
-MASTER:, which rebuilds Tiny-C, BC, B2 and the original programs from all their source disks).
+can bring each volume it needs on line in turn (UCSD-C's MOUNT and its master makefile,
+MASTER:, which rebuilds UCSD-C, BC, B2 and the original programs from all their source disks).
 Two new standard procedures (`NativeMount.inc`; in Z80 mode the coprocessor runs them):
 
     CSP 140 MOUNT      unit, address of a NUL-terminated name -> result
@@ -399,7 +399,7 @@ changes.
 ## Version 2.18: the volumes there are to MOUNT
 
 Two standard procedures more (`NativeMount.inc`; in Z80 mode the coprocessor runs them), so
-that a program can list what MOUNT (CSP 140) can put on a unit -- UCSD-TinyC's shell (VOLUMES)
+that a program can list what MOUNT (CSP 140) can put on a unit -- UCSD-C's shell (VOLUMES)
 and MOUNT do:
 
     CSP 142 VOLADDR  index                 -> address (a long: two words, the low one on top)
@@ -466,7 +466,7 @@ step it was reached in; `=2` also each step's).
 **Repository:** UCSD-Pascal_Windows_Emulator  **Base:** 7ac58ed (version 1.90)  **Branch:** `calli-csp138`
 
 ## What
-Adds CSP 138, CALLI: call through a function pointer. Tiny-C used to compile such a call to a
+Adds CSP 138, CALLI: call through a function pointer. UCSD-C used to compile such a call to a
 sequence that stored the function value into the operand bytes of the following `CXP` at run
 time (self-modifying code). It now compiles to `<arguments>; <function value>; CSP 138`.
 CALLI pops the function value (`seg | proc << 8`) and does what `CXP seg,proc` would; the
@@ -485,7 +485,7 @@ return IPC is the instruction after the CSP.
 * Native P-Code mode only, like the double CSPs: the Z80 interpreter's CSPTBL has 41 entries.
 
 ## Testing (Linux, g++)
-* Tiny-C (https://github.com/Bio-Printer/UCSD-TinyC): 18 tests incl. new `funcptr`, `funcseg`
+* UCSD-C (https://github.com/Bio-Printer/UCSD-C): 18 tests incl. new `funcptr`, `funcseg`
   (CALLI into unloaded segments, recursion through a pointer); crosscheck, selfcompile, voltest,
   tcverify native and z80 (z80 with `-z`).
 * Boot trace-diff (`linux-harness/harness`): output identical before and after.
