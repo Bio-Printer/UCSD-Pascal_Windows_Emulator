@@ -17,3 +17,6 @@ Release/
 
 # the emulated printer's output (written while the emulator runs)
 UCSDPascal/C_/Tmp/
+
+# per-user Visual Studio settings
+*.vcxproj.user
